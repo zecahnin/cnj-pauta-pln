@@ -27,6 +27,10 @@ Uso:
 
 from __future__ import annotations
 
+# Bloqueia TensorFlow ANTES de importar bertopic/umap (evita segfault
+# TF+torch+numba; ver src/tf_guard.py). Deve vir antes de qualquer import pesado.
+import tf_guard  # noqa: F401  (efeito colateral no import)
+
 import argparse
 from pathlib import Path
 
@@ -37,6 +41,48 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 INTERIM = PROJECT_ROOT / "data" / "interim" / "noticias_limpo.parquet"
 PROC = PROJECT_ROOT / "data" / "processed"
 SEED = 42
+
+# --- Taxonomia temática (Fase 4: consolidação dos tópicos do BERTopic) ---------
+# Cada tópico do BERTopic (id atribuído por tamanho: 0 = maior) é consolidado em
+# UMA classe temática interpretável. A descoberta é não-supervisionada (BERTopic);
+# esta taxonomia é o produto exploratório que vira o ESPAÇO DE RÓTULOS da
+# classificação supervisionada da Fase 6. A atribuição por documento é um RÓTULO
+# FRACO (derivado do clustering, não anotado por humano) — a avaliação formal usa
+# o gold set humano em reports/gold_labels.csv.
+#
+# Mantém-se a granularidade de 10 classes (dentro da faixa 6-10 pedida) porque
+# cada tópico é semanticamente distinto e interpretável, e porque o gold humano
+# já foi anotado contra estes 10 rótulos. É a fonte canônica da taxonomia;
+# src/drift.py reusa este mapeamento.
+TAXONOMY = {
+    0: "Justiça itinerante / cidadania",
+    1: "IA / Conecta / Justiça 4.0",
+    2: "Saúde / judicialização / SUS",
+    3: "Direitos humanos / Corte IDH",
+    4: "Violência doméstica / mulheres",
+    5: "Sistema prisional / Pena Justa",
+    6: "Infância e juventude",
+    7: "Sustentabilidade ambiental",
+    8: "Processos disciplinares / sessões",
+    9: "Precatórios / corregedoria",
+}
+
+# Palavras-âncora esperadas em cada tópico (id -> termo que DEVE aparecer na
+# representação c-TF-IDF). Usadas para verificar, após cada execução, que a ordem
+# dos tópicos do BERTopic não mudou e que a TAXONOMY continua válida. Se um termo
+# não casar, a função de verificação avisa em vez de gravar um rótulo errado.
+TAXONOMY_ANCHORS = {
+    0: "itinerante",
+    1: "inteligência artificial",
+    2: "saúde",
+    3: "humanos",
+    4: "violência",
+    5: "prisional",
+    6: "crianças",
+    7: "sustentabilidade",
+    8: "disciplinar",
+    9: "precatórios",
+}
 
 # Stopwords institucionais/onipresentes (espelham as da EDA) — não discriminam
 # pauta e poluiriam a representação c-TF-IDF.
@@ -195,6 +241,31 @@ def run_sweep(sizes: list[int]) -> None:
     _persist(df, docs, model, topics, best_mts)
 
 
+def verify_taxonomy(model, topic_ids) -> bool:
+    """Confere que a ordem dos tópicos casa com TAXONOMY_ANCHORS.
+
+    O BERTopic numera os tópicos por tamanho; com SEED fixo a ordem é estável,
+    mas mudanças de versão de UMAP/HDBSCAN poderiam reordená-los. Sem esta
+    checagem, gravaríamos rótulos temáticos trocados. Retorna True se todas as
+    âncoras casarem; caso contrário imprime os desvios e retorna False.
+    """
+    ok = True
+    for tid in topic_ids:
+        if tid == -1 or tid not in TAXONOMY_ANCHORS:
+            continue
+        terms = " ".join(w for w, _ in model.get_topic(tid)).lower()
+        anchor = TAXONOMY_ANCHORS[tid].lower()
+        if anchor not in terms:
+            ok = False
+            print(f"[topics][AVISO] tópico {tid} não contém a âncora "
+                  f"'{anchor}' — TAXONOMY pode estar desalinhada. "
+                  f"Termos: {terms[:80]}")
+    if ok:
+        print("[topics] taxonomia verificada: ordem dos tópicos casa com "
+              "as âncoras esperadas.")
+    return ok
+
+
 def _persist(df, docs, model, topics, best_mts: int) -> None:
     # Redução de outliers para a análise temporal (Fase 5): reatribui os
     # documentos do tópico -1 ao tópico mais próximo via c-TF-IDF. A taxa BRUTA
@@ -212,7 +283,13 @@ def _persist(df, docs, model, topics, best_mts: int) -> None:
     info = model.get_topic_info()
     info.to_csv(PROC / "topic_info.csv", index=False)
 
-    # Atribuição por documento (tópico bruto e reduzido)
+    # Verifica que a numeração dos tópicos casa com a TAXONOMY antes de gravar
+    # os rótulos temáticos (evita gravar classe errada se a ordem mudar).
+    verify_taxonomy(model, sorted(set(topics_reduced)))
+
+    # Atribuição por documento (tópico bruto, reduzido e classe temática nomeada).
+    # `classe_tematica` é o RÓTULO FRACO usado como alvo no treino supervisionado
+    # da Fase 6 (consolidação não-supervisionada -> espaço de rótulos).
     doc_topics = pd.DataFrame({
         "id": df["id"].to_numpy(),
         "data_publicacao": df["data_publicacao"].to_numpy(),
@@ -220,8 +297,12 @@ def _persist(df, docs, model, topics, best_mts: int) -> None:
         "titulo": df["titulo"].to_numpy(),
         "topic_raw": topics,
         "topic": topics_reduced,
+        "classe_id": topics_reduced,
+        "classe_tematica": [TAXONOMY.get(t, "Outros") for t in topics_reduced],
     })
     doc_topics.to_parquet(PROC / "doc_topics.parquet", index=False)
+    print("[topics] distribuição de classes temáticas (rótulo fraco):")
+    print(doc_topics["classe_tematica"].value_counts().to_string())
 
     # Modelo (pickle, sem o embedding model pesado)
     model_dir = PROC / "bertopic_model"
