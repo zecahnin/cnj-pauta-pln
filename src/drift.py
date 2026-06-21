@@ -24,6 +24,7 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -32,19 +33,11 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROC = PROJECT_ROOT / "data" / "processed"
 
-# Rótulos interpretativos dos tópicos (da Fase 4; interpretação, não métrica).
-TOPIC_LABELS = {
-    0: "Justiça itinerante / cidadania",
-    1: "IA / Conecta / Justiça 4.0",
-    2: "Saúde / judicialização / SUS",
-    3: "Direitos humanos / Corte IDH",
-    4: "Violência doméstica / mulheres",
-    5: "Sistema prisional / Pena Justa",
-    6: "Infância e juventude",
-    7: "Sustentabilidade ambiental",
-    8: "Processos disciplinares / sessões",
-    9: "Precatórios / corregedoria",
-}
+# Rótulos dos tópicos = taxonomia temática da Fase 4. Reusa a fonte canônica
+# (src/topics.py::TAXONOMY) para garantir que rótulos da deriva temporal e da
+# classificação supervisionada nunca divirjam.
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+from topics import TAXONOMY as TOPIC_LABELS  # noqa: E402
 
 
 def load_doc_topics(use_reduced: bool = False) -> pd.DataFrame:
