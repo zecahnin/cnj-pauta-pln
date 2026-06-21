@@ -66,3 +66,42 @@ def get_stopwords() -> list[str]:
     nltk.download("stopwords", quiet=True)
     from nltk.corpus import stopwords
     return sorted(set(stopwords.words("portuguese")) | DOMAIN_STOP)
+
+
+# --- Listas canônicas para limpeza de NER (Fase 6b) ----------------------------
+# Fonte canônica única, no mesmo espírito de DOMAIN_STOP: chaves normalizadas
+# (minúsculas, sem acento, espaços colapsados — ver _norm_key em src/ner.py).
+# O NER pt-BR tagueia muito substantivo comum/adjetivo institucional como
+# entidade; estas listas separam "entidade nomeada informativa" de ruído.
+
+# Substantivos comuns / adjetivos genéricos que o NER marca como entidade mas
+# que não são entidades nomeadas informativas (poluem o Top N). Descartados.
+GENERIC_ENTITY_STOP = {
+    "judiciario", "brasil", "federal", "nacional", "publico", "justica",
+    "poder", "governo", "estado", "uniao", "ministerio", "conselho", "pais",
+    "republica", "regiao", "sul", "norte", "nordeste", "sudeste",
+    "centro-oeste", "tribunal", "ministro", "juiz", "juiza", "desembargador",
+    "presidente", "poder judiciario",
+}
+
+# Auto-referências do próprio CNJ: ficam no parquet (são entidades de fato), mas
+# são excluídas da análise diferencial por classe (entidades_por_classe.csv),
+# onde só interessa o que distingue uma classe das demais.
+ENTITY_SELF_REF = {
+    "conselho nacional de justica", "cnj",
+}
+
+# Siglas curtas legítimas: escapam do filtro de fragmento (len curto + PER/ORG),
+# porque são entidades nomeadas reais apesar de poucos caracteres.
+ENTITY_ACRONYM_WHITELIST = {
+    "cnj", "stf", "stj", "tst", "tse", "trf", "oab", "mp", "mpf", "dpu",
+    "cnmp", "sus", "idh", "onu", "pnud", "ipea", "ibge",
+}
+
+# Palavras funcionais (preposições, artigos, conjunções) penduradas nas bordas
+# de um span do NER ("tribunal de justica do" -> "tribunal de justica"). São
+# removidas apenas do início e do fim, nunca do miolo do span.
+ENTITY_EDGE_WORDS = {
+    "de", "do", "da", "dos", "das", "no", "na", "nos", "nas", "e", "o", "a",
+    "os", "as", "em", "para", "por", "com", "ao", "à",
+}
