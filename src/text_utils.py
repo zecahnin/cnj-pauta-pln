@@ -90,6 +90,27 @@ def topic_to_class_id(raw_topic: int, consolidation_map: dict[int, str]) -> int:
     return CLASS_NAME_TO_ID[consolidation_map[raw_topic]]
 
 
+# Regra do dono (registrada para o futuro): numa janela recente, classe com
+# menos de MIN_CLASS_DOCS_RECENT documentos não tem massa suficiente para
+# classificar/avaliar com segurança e deve ser colapsada em 'Outros'. Em
+# 21/06/2026 nenhuma dispara na janela de 18 meses (mínimo ~34, ENAC), mas a
+# regra fica viva: se a janela ou o corpus mudar, as classes pequenas colapsam
+# automaticamente. Ver reports/diagnostico_janela.csv.
+MIN_CLASS_DOCS_RECENT = 30
+OUTROS_LABEL = "Outros"
+
+
+def small_classes_for_window(
+        window_counts: dict[int, int],
+        min_docs: int = MIN_CLASS_DOCS_RECENT) -> set[int]:
+    """Ids de classe que colapsam em 'Outros' por terem < min_docs na janela.
+
+    `window_counts` é {classe_id: nº de docs na janela}; classe ausente conta
+    como 0 (também colapsa). Retorna o conjunto (vazio quando todas têm massa).
+    """
+    return {cid for cid in TAXONOMY if window_counts.get(cid, 0) < min_docs}
+
+
 TAXONOMY_ANCHORS = {
     0: "disciplinar",
     1: "racial",

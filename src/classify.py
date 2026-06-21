@@ -26,8 +26,10 @@ Análise de overfit/underfit (peça central do Módulo 2): a MLP é treinada em 
 variantes — COM e SEM Dropout — e as curvas de perda/acurácia treino×validação
 são plotadas lado a lado para demonstrar o overfitting e como o Dropout o atenua.
 
-Gera também `reports/gold_template.csv`: amostra estratificada (~200) com a coluna
-`classe` VAZIA, para anotação manual (protocolo reprodutível de gold).
+Gera também `reports/gold_template.csv`: amostra estratificada por classe
+(~8-10/classe) restrita à janela recente (default 18 meses, Parada 1), com a
+coluna `classe` VAZIA, para anotação manual cega (protocolo reprodutível).
+`--template-only` gera só o template e para (não roda a classificação).
 
 Artefatos:
 - reports/gold_template.csv
@@ -58,7 +60,9 @@ import pandas as pd
 # disponível. A taxonomia e as stopwords vêm do módulo TF-free text_utils.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
-from text_utils import TAXONOMY, get_stopwords  # noqa: E402
+from text_utils import (  # noqa: E402
+    MIN_CLASS_DOCS_RECENT, OUTROS_LABEL, TAXONOMY, get_stopwords,
+    small_classes_for_window)
 
 INTERIM = PROJECT_ROOT / "data" / "interim" / "noticias_limpo.parquet"
 PROC = PROJECT_ROOT / "data" / "processed"
@@ -128,16 +132,49 @@ def make_splits(pool: pd.DataFrame):
 # --------------------------------------------------------------------------- #
 # Gold template (6.1) — NÃO rotula; só gera o CSV vazio para anotação humana
 # --------------------------------------------------------------------------- #
-def write_gold_template(n_per_class: int = 20) -> None:
-    """Amostra ALEATÓRIA ESTRATIFICADA por classe candidata (rótulo fraco
-    reduzido, que cobre todos os 979 docs), com a coluna `classe` VAZIA."""
+def write_gold_template(recent_months: int = 18, n_per_class: int = 10) -> None:
+    """Template de gold: amostra ALEATÓRIA ESTRATIFICADA por classe, restrita à
+    JANELA RECENTE, com a coluna `classe` VAZIA para anotação humana CEGA.
+
+    - `recent_months`: usa só docs cujos `data_publicacao` caem nos N meses mais
+      recentes do corpus (decisão da Parada 1: 18 meses).
+    - `n_per_class`: ~8-10 docs por classe (default 10), limitado pela
+      disponibilidade da classe na janela.
+    - Colunas: id, titulo, trecho, classe (VAZIA). NÃO incluímos o rótulo fraco
+      candidato de propósito — anotação às cegas evita viés de ancoragem.
+    - Regra do dono (registrada): classe com < MIN_CLASS_DOCS_RECENT docs na
+      janela colapsa em 'Outros'. Hoje nenhuma dispara; o log confirma.
+    """
     dt = pd.read_parquet(PROC / "doc_topics.parquet")[
-        ["id", "classe_id", "classe_tematica"]]
+        ["id", "classe_id", "classe_tematica", "data_publicacao"]]
+    dt["data_publicacao"] = pd.to_datetime(dt["data_publicacao"])
+
+    # Janela recente (mesma referência do diagnóstico: última publicação).
+    ref = dt["data_publicacao"].max()
+    start = ref - pd.DateOffset(months=recent_months)
+    recent = dt[dt["data_publicacao"] > start].copy()
+    counts = recent["classe_id"].value_counts().to_dict()
+
+    # Regra <30 docs/janela -> 'Outros' (hoje no-op; viva para o futuro).
+    collapsed = small_classes_for_window(counts)
+    if collapsed:
+        nomes = ", ".join(f"{c}:{TAXONOMY[c]} ({counts.get(c, 0)})"
+                          for c in sorted(collapsed))
+        print(f"[clf] regra <{MIN_CLASS_DOCS_RECENT} docs/{recent_months}m -> "
+              f"'{OUTROS_LABEL}': colapsando {nomes}")
+        recent["strata"] = recent["classe_id"].apply(
+            lambda c: OUTROS_LABEL if c in collapsed else TAXONOMY[c])
+    else:
+        print(f"[clf] regra <{MIN_CLASS_DOCS_RECENT} docs/{recent_months}m -> "
+              f"'{OUTROS_LABEL}': nenhuma classe dispara (mínimo "
+              f"{min(counts.values())} docs); espaço de rótulos = 30 classes.")
+        recent["strata"] = recent["classe_tematica"]
+
     txt = pd.read_parquet(INTERIM)[["id", "titulo", "corpo_texto"]]
-    df = dt.merge(txt, on="id")
+    df = recent.merge(txt, on="id")
     rng = np.random.RandomState(SEED)
     parts = []
-    for cid, g in df.groupby("classe_id"):
+    for _, g in df.groupby("strata"):
         take = min(n_per_class, len(g))
         parts.append(g.sample(n=take, random_state=rng))
     sample = pd.concat(parts).sample(frac=1, random_state=rng)  # embaralha
@@ -145,13 +182,13 @@ def write_gold_template(n_per_class: int = 20) -> None:
         "id": sample["id"].to_numpy(),
         "titulo": sample["titulo"].to_numpy(),
         "trecho": sample["corpo_texto"].fillna("").str[:400].to_numpy(),
-        "classe_candidata_fraca": sample["classe_id"].to_numpy(),
-        "classe": "",  # <-- VAZIA: rotular à mão (0-9 ou 'indefinido')
+        "classe": "",  # <-- VAZIA: rotular à mão (0-29, 'Outros' ou 'indefinido')
     })
     GOLD_TEMPLATE.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(GOLD_TEMPLATE, index=False)
-    print(f"[clf] gold_template.csv gerado: {len(out)} linhas estratificadas "
-          f"-> {GOLD_TEMPLATE}")
+    print(f"[clf] gold_template.csv: {len(out)} linhas ({sample['strata'].nunique()} "
+          f"estratos x ~{n_per_class}/classe, janela {recent_months}m, "
+          f"{len(recent)} docs candidatos) -> {GOLD_TEMPLATE}")
 
 
 # --------------------------------------------------------------------------- #
@@ -476,10 +513,21 @@ def main() -> None:
     ap.add_argument("--epochs", type=int, default=50)
     ap.add_argument("--skip-bert", action="store_true",
                     help="Pula o Modelo C (BERTimbau) — útil p/ iteração rápida.")
+    ap.add_argument("--recent-months", type=int, default=18,
+                    help="Janela recente (meses) p/ gold/classificação (Parada 1).")
+    ap.add_argument("--per-class", type=int, default=10,
+                    help="Docs por classe no gold_template (~8-10).")
+    ap.add_argument("--template-only", action="store_true",
+                    help="Só gera o gold_template e para (não roda classificação).")
     args = ap.parse_args()
 
     set_seeds()
-    write_gold_template()
+    write_gold_template(recent_months=args.recent_months,
+                        n_per_class=args.per_class)
+    if args.template_only:
+        print("[clf] --template-only: parando após o template (gold a rotular "
+              "à mão; classificação NÃO executada).")
+        return
     pool, gold_df, gold_ids, n_indef = load_data()
     tr, va, te = make_splits(pool)
 
