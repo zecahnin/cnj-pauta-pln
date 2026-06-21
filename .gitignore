@@ -46,3 +46,6 @@ logs/
 
 # Arquivo auxiliar de monitoramento (Hermes)
 .fase_atual.txt
+
+# Orquestração (Hermes)
+.hermes/
