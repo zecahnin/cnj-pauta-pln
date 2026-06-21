@@ -10,6 +10,9 @@ divirjam nos rótulos ou no vocabulário.
 
 from __future__ import annotations
 
+import csv
+from pathlib import Path
+
 # --- Taxonomia temática (corpus de 2 anos, 4.394 notícias) --------------------
 # Consolidada a partir de 46 tópicos brutos do BERTopic em 30 classes
 # interpretáveis, decididas pelo dono do projeto (ver reports/taxonomia_map.csv).
@@ -45,6 +48,47 @@ TAXONOMY = {
     28: "Infância e juventude",
     29: "Conflitos fundiários",
 }
+
+# Inverso da TAXONOMY: nome de classe consolidada -> id (0..29). Usado para
+# traduzir o `classe_final` (texto) do mapa de consolidação no id numérico.
+CLASS_NAME_TO_ID = {name: cid for cid, name in TAXONOMY.items()}
+
+# Mapa de consolidação (decisão do dono): tópico bruto do BERTopic -> classe
+# consolidada. É a FONTE DE VERDADE para rotular cada tópico por classe; NÃO se
+# assume que a numeração do BERTopic (por tamanho) case com a taxonomia.
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+CONSOLIDATION_MAP_CSV = _PROJECT_ROOT / "reports" / "taxonomia_map.csv"
+
+
+def load_consolidation_map(path: str | Path | None = None) -> dict[int, str]:
+    """Lê reports/taxonomia_map.csv -> {tópico_bruto: nome_da_classe_final}.
+
+    Valida que todo `classe_final` existe na TAXONOMY (senão a inversão para id
+    falharia silenciosamente). Levanta ValueError em rótulo desconhecido.
+    """
+    path = Path(path) if path is not None else CONSOLIDATION_MAP_CSV
+    mapping: dict[int, str] = {}
+    with path.open(encoding="utf-8") as fh:
+        for row in csv.DictReader(fh):
+            raw = int(row["topico_id"])
+            name = row["classe_final"].strip()
+            if name not in CLASS_NAME_TO_ID:
+                raise ValueError(
+                    f"classe_final '{name}' (tópico {raw}) não está na TAXONOMY")
+            mapping[raw] = name
+    return mapping
+
+
+def topic_to_class_id(raw_topic: int, consolidation_map: dict[int, str]) -> int:
+    """Tópico bruto/reduzido -> id de classe consolidada (0..29).
+
+    Outlier (-1) é mantido como -1. KeyError se o tópico não estiver no mapa
+    (sinaliza que a numeração do BERTopic mudou — condição de PARADA).
+    """
+    if raw_topic == -1:
+        return -1
+    return CLASS_NAME_TO_ID[consolidation_map[raw_topic]]
+
 
 TAXONOMY_ANCHORS = {
     0: "disciplinar",

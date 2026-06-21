@@ -48,7 +48,8 @@ SEED = 42
 # documento gravada aqui é um RÓTULO FRACO (vem do clustering, não de humano);
 # a avaliação formal é a Fase 6, contra o gold humano.
 from text_utils import (  # noqa: E402
-    DOMAIN_STOP, TAXONOMY, TAXONOMY_ANCHORS, get_stopwords)
+    CLASS_NAME_TO_ID, DOMAIN_STOP, TAXONOMY, TAXONOMY_ANCHORS,
+    get_stopwords, load_consolidation_map, topic_to_class_id)
 
 
 def load_data() -> tuple[pd.DataFrame, np.ndarray]:
@@ -185,29 +186,63 @@ def run_sweep(sizes: list[int]) -> None:
     _persist(df, docs, model, topics, best_mts)
 
 
-def verify_taxonomy(model, topic_ids) -> bool:
-    """Confere que a ordem dos tópicos casa com TAXONOMY_ANCHORS.
+def verify_taxonomy(model, consolidation_map: dict[int, str]) -> bool:
+    """Valida o mapa de consolidação (46 tópicos -> 30 classes) contra as âncoras.
 
-    O BERTopic numera os tópicos por tamanho; com SEED fixo a ordem é estável,
-    mas mudanças de versão de UMAP/HDBSCAN poderiam reordená-los. Sem esta
-    checagem, gravaríamos rótulos temáticos trocados. Retorna True se todas as
-    âncoras casarem; caso contrário imprime os desvios e retorna False.
+    Para cada classe consolidada com âncora, reúne os tópicos brutos que o mapa
+    funde nela e confere que o termo-âncora aparece nos termos c-TF-IDF de pelo
+    menos um deles. Se a numeração do BERTopic mudar (nova versão de UMAP/HDBSCAN),
+    um tópico passaria a carregar termos de outra classe e a âncora não casaria —
+    é assim que pegamos rótulo trocado. Retorna True se todas casarem.
     """
+    from collections import defaultdict
+
+    raws_by_class: dict[int, list[int]] = defaultdict(list)
+    for raw, name in consolidation_map.items():
+        raws_by_class[CLASS_NAME_TO_ID[name]].append(raw)
+
+    available = set(model.get_topics().keys())
     ok = True
-    for tid in topic_ids:
-        if tid == -1 or tid not in TAXONOMY_ANCHORS:
-            continue
-        terms = " ".join(w for w, _ in model.get_topic(tid)).lower()
-        anchor = TAXONOMY_ANCHORS[tid].lower()
-        if anchor not in terms:
+    for cid, anchor in TAXONOMY_ANCHORS.items():
+        raws = [r for r in raws_by_class.get(cid, []) if r in available]
+        terms = " ".join(
+            w for r in raws for w, _ in model.get_topic(r) if w).lower()
+        if anchor.lower() not in terms:
             ok = False
-            print(f"[topics][AVISO] tópico {tid} não contém a âncora "
-                  f"'{anchor}' — TAXONOMY pode estar desalinhada. "
-                  f"Termos: {terms[:80]}")
+            print(f"[topics][AVISO] classe {cid} '{TAXONOMY[cid]}' "
+                  f"(tópicos {raws}) não contém a âncora '{anchor}' — mapa de "
+                  f"consolidação pode estar desalinhado. Termos: {terms[:80]}")
     if ok:
-        print("[topics] taxonomia verificada: ordem dos tópicos casa com "
-              "as âncoras esperadas.")
+        print("[topics] taxonomia verificada: âncoras casam com o mapa de "
+              "consolidação (46 tópicos -> 30 classes).")
     return ok
+
+
+def make_classes_figure(doc_topics: pd.DataFrame) -> None:
+    """Figura 08b: distribuição de documentos pelas 30 classes consolidadas.
+
+    Diferente da figura de 'material cru' (por tópico bruto, sem nome): agora a
+    taxonomia está decidida, então rotulamos pelas classes consolidadas.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    counts = doc_topics["classe_tematica"].value_counts().sort_values()
+    fig, ax = plt.subplots(figsize=(11, max(4, 0.45 * len(counts))))
+    ax.barh(counts.index.tolist(), counts.values, color="#6a3d9a")
+    for i, v in enumerate(counts.values):
+        ax.text(v + max(counts.values) * 0.01, i, str(v), va="center", fontsize=9)
+    ax.set_xlabel("Nº de documentos")
+    ax.set_title(f"Classes consolidadas — corpus de 2 anos "
+                 f"({len(counts)} classes, {int(counts.sum())} notícias)")
+    plt.tight_layout()
+    fig_dir = PROJECT_ROOT / "reports" / "figures"
+    fig_dir.mkdir(parents=True, exist_ok=True)
+    out = fig_dir / "08b_classes_2anos.png"
+    plt.savefig(out, dpi=130)
+    plt.close()
+    print(f"[topics] figura salva: {out}")
 
 
 def _persist(df, docs, model, topics, best_mts: int) -> None:
@@ -227,13 +262,28 @@ def _persist(df, docs, model, topics, best_mts: int) -> None:
     info = model.get_topic_info()
     info.to_csv(PROC / "topic_info.csv", index=False)
 
-    # Verifica que a numeração dos tópicos casa com a TAXONOMY antes de gravar
-    # os rótulos temáticos (evita gravar classe errada se a ordem mudar).
-    verify_taxonomy(model, sorted(set(topics_reduced)))
+    # Mapa de consolidação (46 tópicos brutos -> 30 classes) decidido pelo dono.
+    # A classe de cada documento vem DESTE mapa, não da ordem de tamanho do
+    # BERTopic. Toda numeração presente precisa estar no mapa (senão a ordem dos
+    # tópicos mudou -> PARADA).
+    cmap = load_consolidation_map()
+    present = sorted(t for t in set(topics_reduced) if t != -1)
+    faltando = [t for t in present if t not in cmap]
+    if faltando:
+        raise SystemExit(
+            f"[topics][PARADA] tópicos {faltando} sem entrada no mapa de "
+            f"consolidação (reports/taxonomia_map.csv). A numeração do BERTopic "
+            f"mudou — revise o mapa antes de gravar rótulos.")
 
-    # Atribuição por documento (tópico bruto, reduzido e classe temática nomeada).
-    # `classe_tematica` é o RÓTULO FRACO usado como alvo no treino supervisionado
-    # da Fase 6 (consolidação não-supervisionada -> espaço de rótulos).
+    # Verifica que as âncoras casam com o mapa antes de gravar os rótulos
+    # (evita gravar classe errada se a ordem dos tópicos mudar).
+    verify_taxonomy(model, cmap)
+
+    # Atribuição por documento. `classe_id`/`classe_tematica` são a CLASSE
+    # CONSOLIDADA (0..29), via mapa; `topic_raw`/`topic` preservam o tópico fino
+    # do BERTopic. `classe_tematica` é o RÓTULO FRACO usado como alvo no treino
+    # supervisionado da Fase 6 (consolidação não-supervisionada -> rótulos).
+    classe_id = [topic_to_class_id(t, cmap) for t in topics_reduced]
     doc_topics = pd.DataFrame({
         "id": df["id"].to_numpy(),
         "data_publicacao": df["data_publicacao"].to_numpy(),
@@ -241,12 +291,15 @@ def _persist(df, docs, model, topics, best_mts: int) -> None:
         "titulo": df["titulo"].to_numpy(),
         "topic_raw": topics,
         "topic": topics_reduced,
-        "classe_id": topics_reduced,
-        "classe_tematica": [TAXONOMY.get(t, "Outros") for t in topics_reduced],
+        "classe_id": classe_id,
+        "classe_tematica": [TAXONOMY.get(c, "Outros") for c in classe_id],
     })
     doc_topics.to_parquet(PROC / "doc_topics.parquet", index=False)
-    print("[topics] distribuição de classes temáticas (rótulo fraco):")
+    print(f"[topics] distribuição pelas {doc_topics['classe_id'].nunique()} "
+          f"classes consolidadas (rótulo fraco):")
     print(doc_topics["classe_tematica"].value_counts().to_string())
+
+    make_classes_figure(doc_topics)
 
     # Modelo (pickle, sem o embedding model pesado)
     model_dir = PROC / "bertopic_model"
