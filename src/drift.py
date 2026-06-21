@@ -34,10 +34,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROC = PROJECT_ROOT / "data" / "processed"
 
 # Rótulos dos tópicos = taxonomia temática da Fase 4. Reusa a fonte canônica
-# (src/topics.py::TAXONOMY) para garantir que rótulos da deriva temporal e da
-# classificação supervisionada nunca divirjam.
+# TF-free (src/text_utils.py::TAXONOMY) para garantir que rótulos da deriva
+# temporal e da classificação supervisionada nunca divirjam.
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
-from topics import TAXONOMY as TOPIC_LABELS  # noqa: E402
+from text_utils import TAXONOMY as TOPIC_LABELS  # noqa: E402
 
 
 def load_doc_topics(use_reduced: bool = False) -> pd.DataFrame:

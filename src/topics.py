@@ -42,69 +42,13 @@ INTERIM = PROJECT_ROOT / "data" / "interim" / "noticias_limpo.parquet"
 PROC = PROJECT_ROOT / "data" / "processed"
 SEED = 42
 
-# --- Taxonomia temática (Fase 4: consolidação dos tópicos do BERTopic) ---------
-# Cada tópico do BERTopic (id atribuído por tamanho: 0 = maior) é consolidado em
-# UMA classe temática interpretável. A descoberta é não-supervisionada (BERTopic);
-# esta taxonomia é o produto exploratório que vira o ESPAÇO DE RÓTULOS da
-# classificação supervisionada da Fase 6. A atribuição por documento é um RÓTULO
-# FRACO (derivado do clustering, não anotado por humano) — a avaliação formal usa
-# o gold set humano em reports/gold_labels.csv.
-#
-# Mantém-se a granularidade de 10 classes (dentro da faixa 6-10 pedida) porque
-# cada tópico é semanticamente distinto e interpretável, e porque o gold humano
-# já foi anotado contra estes 10 rótulos. É a fonte canônica da taxonomia;
-# src/drift.py reusa este mapeamento.
-TAXONOMY = {
-    0: "Justiça itinerante / cidadania",
-    1: "IA / Conecta / Justiça 4.0",
-    2: "Saúde / judicialização / SUS",
-    3: "Direitos humanos / Corte IDH",
-    4: "Violência doméstica / mulheres",
-    5: "Sistema prisional / Pena Justa",
-    6: "Infância e juventude",
-    7: "Sustentabilidade ambiental",
-    8: "Processos disciplinares / sessões",
-    9: "Precatórios / corregedoria",
-}
-
-# Palavras-âncora esperadas em cada tópico (id -> termo que DEVE aparecer na
-# representação c-TF-IDF). Usadas para verificar, após cada execução, que a ordem
-# dos tópicos do BERTopic não mudou e que a TAXONOMY continua válida. Se um termo
-# não casar, a função de verificação avisa em vez de gravar um rótulo errado.
-TAXONOMY_ANCHORS = {
-    0: "itinerante",
-    1: "inteligência artificial",
-    2: "saúde",
-    3: "humanos",
-    4: "violência",
-    5: "prisional",
-    6: "crianças",
-    7: "sustentabilidade",
-    8: "disciplinar",
-    9: "precatórios",
-}
-
-# Stopwords institucionais/onipresentes (espelham as da EDA) — não discriminam
-# pauta e poluiriam a representação c-TF-IDF.
-DOMAIN_STOP = {
-    "cnj", "conselho", "nacional", "justica", "justiça", "judiciario",
-    "judiciário", "tribunal", "tribunais", "poder", "brasil", "brasileiro",
-    "brasileira", "país", "pais", "ainda", "sobre", "durante", "ser", "após",
-    "apos", "todos", "todas", "além", "alem", "dia", "dias", "ano", "anos",
-    "mês", "mes", "meses", "secao", "seção", "presidente", "ministro",
-    "ministra", "federal", "estado", "estadual", "geral", "primeira",
-    "segundo", "segunda", "número", "numero", "parte", "forma", "meio",
-    "grande", "maior", "novo", "nova", "novos", "novas", "três", "tres",
-    "dois", "duas", "feira", "terça", "terca", "quarta", "quinta", "sexta",
-    "auxiliar", "presidência", "presidencia",
-}
-
-
-def get_stopwords() -> list[str]:
-    import nltk
-    nltk.download("stopwords", quiet=True)
-    from nltk.corpus import stopwords
-    return sorted(set(stopwords.words("portuguese")) | DOMAIN_STOP)
+# Taxonomia, âncoras e stopwords vêm da fonte canônica TF-free (text_utils), para
+# que descoberta (Fase 4), deriva (Fase 5) e classificação (Fase 6) compartilhem
+# exatamente os mesmos rótulos e vocabulário. A atribuição de classe por
+# documento gravada aqui é um RÓTULO FRACO (vem do clustering, não de humano);
+# a avaliação formal é a Fase 6, contra o gold humano.
+from text_utils import (  # noqa: E402
+    DOMAIN_STOP, TAXONOMY, TAXONOMY_ANCHORS, get_stopwords)
 
 
 def load_data() -> tuple[pd.DataFrame, np.ndarray]:
