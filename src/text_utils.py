@@ -57,6 +57,8 @@ DOMAIN_STOP = {
     "grande", "maior", "novo", "nova", "novos", "novas", "três", "tres",
     "dois", "duas", "feira", "terça", "terca", "quarta", "quinta", "sexta",
     "auxiliar", "presidência", "presidencia",
+    # Ruído de fragmentos de número de processo (ex.: 0007147-67.2024.2.00.0000)
+    "0000", "00",
 }
 
 
