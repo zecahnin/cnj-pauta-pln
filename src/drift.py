@@ -41,20 +41,22 @@ from text_utils import TAXONOMY as TOPIC_LABELS  # noqa: E402
 
 
 def load_doc_topics(use_reduced: bool = False) -> pd.DataFrame:
-    """Carrega atribuições de tópico.
+    """Carrega atribuições e agrega à CLASSE CONSOLIDADA (30 classes).
 
-    Por padrão usa as atribuições BRUTAS do HDBSCAN (`topic_raw`), removendo
-    outliers (-1): são os membros de cluster de alta confiança, o que torna os
-    picos e suas manchetes de evidência fiéis ao tema. Com `use_reduced=True`,
-    usa as atribuições pós-`reduce_outliers` (cobertura total, porém com ruído).
+    A unidade de análise da deriva é a classe consolidada (`classe_id`/
+    `classe_tematica`), não o tópico bruto do BERTopic — assim os picos casam com
+    a taxonomia decidida pelo dono. Por padrão, mantém só os membros de
+    ALTA CONFIANÇA (`topic_raw != -1`): para esses, a classe já vem do tópico
+    bruto (reduce_outliers só mexe nos -1), o que torna picos e manchetes de
+    evidência fiéis ao tema. Com `use_reduced=True`, inclui também os outliers
+    reatribuídos por c-TF-IDF (cobertura total, porém com ruído).
     """
     df = pd.read_parquet(PROC / "doc_topics.parquet")
     df["data_publicacao"] = pd.to_datetime(df["data_publicacao"])
-    col = "topic" if use_reduced else "topic_raw"
-    df["topic"] = df[col]
     if not use_reduced:
-        df = df[df["topic"] != -1].copy()
-    df["label"] = df["topic"].map(TOPIC_LABELS).fillna(df["topic"].astype(str))
+        df = df[df["topic_raw"] != -1].copy()
+    df["topic"] = df["classe_id"]
+    df["label"] = df["classe_tematica"]
     return df
 
 
