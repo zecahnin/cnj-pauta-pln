@@ -1,0 +1,45 @@
+# ==========================================================================
+# Projeto: Deriva de Pauta nas Notícias do CNJ (PLN)
+# Ambiente reproduzível via pip. Versões fixadas correspondem EXATAMENTE às
+# efetivamente instaladas e usadas na execução do pipeline (sem pins fictícios).
+# Python 3.12
+#
+# Instalação:
+#   python3 -m venv .venv && source .venv/bin/activate
+#   pip install -r requirements.txt
+# ==========================================================================
+
+# --- Fase 1: Coleta ---
+requests==2.34.2
+beautifulsoup4==4.15.0
+lxml==6.1.1
+
+# --- Fase 2: Pré-processamento ---
+pandas==3.0.3
+pyarrow==24.0.0
+langdetect==1.0.9
+
+# --- Fase 3: EDA / visualização ---
+matplotlib==3.11.0
+wordcloud==1.9.6
+nltk==3.9.4
+
+# --- Fase 4: Embeddings + modelagem de tópicos ---
+numpy==2.2.6
+scipy==1.18.0
+scikit-learn==1.9.0
+sentence-transformers==5.6.0
+transformers==5.12.1
+torch==2.12.1
+bertopic==0.17.4
+umap-learn==0.5.12
+hdbscan==0.8.44
+gensim==4.4.0          # coerência c_v (CoherenceModel)
+
+# --- Fase 5/6: deriva temporal e validação supervisionada ---
+plotly==6.8.0
+
+# --- Notebooks ---
+nbformat==5.10.4
+nbconvert==7.17.1
+ipykernel==7.3.0

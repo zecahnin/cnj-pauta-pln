@@ -1,0 +1,33 @@
+# ==========================================================================
+# Ambiente conda alternativo ao requirements.txt.
+# Uso:
+#   conda env create -f environment.yml
+#   conda activate cnj-pauta-pln
+# As bibliotecas de modelagem (bertopic, sentence-transformers, umap, hdbscan)
+# são instaladas via pip dentro do ambiente conda por terem melhor suporte lá.
+# ==========================================================================
+name: cnj-pauta-pln
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - requests=2.34.2
+  - beautifulsoup4=4.13.6
+  - lxml=6.0.2
+  - pandas=2.3.3
+  - pyarrow=22.0.0
+  - numpy=2.2.6
+  - scikit-learn=1.7.2
+  - matplotlib=3.10.7
+  - nltk=3.9.2
+  - jupyter=1.1.1
+  - ipykernel=6.31.1
+  - pip:
+      - langdetect==1.0.9
+      - wordcloud==1.9.4
+      - sentence-transformers==5.1.2
+      - bertopic==0.17.3
+      - umap-learn==0.5.9.post2
+      - hdbscan==0.8.40
+      - plotly==6.3.1

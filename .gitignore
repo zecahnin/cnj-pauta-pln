@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.Python
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# IDEs
+.idea/
+.vscode/
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Modelos pesados / artefatos (versionar via DVC ou release, não no git)
+models/
+*.safetensors
+*.bin
+*.pt
+
+# Dados — ignoramos arquivos de rascunho, mas versionamos os artefatos canônicos
+# de cada fase para garantir reprodutibilidade (a WP REST API é alvo móvel).
+data/raw/*
+data/interim/*
+data/processed/*
+!data/**/.gitkeep
+!data/raw/noticias.jsonl
+!data/interim/noticias_limpo.parquet
+!data/processed/*.csv
+!data/processed/*.parquet
+
+# Caches de modelos HuggingFace / sentence-transformers
+.cache/
+*.lock
+
+# Logs
+*.log
+logs/
+
+# Arquivo auxiliar de monitoramento (Hermes)
+.fase_atual.txt
