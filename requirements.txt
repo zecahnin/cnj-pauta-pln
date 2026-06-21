@@ -36,8 +36,13 @@ umap-learn==0.5.12
 hdbscan==0.8.44
 gensim==4.4.0          # coerência c_v (CoherenceModel)
 
-# --- Fase 5/6: deriva temporal e validação supervisionada ---
+# --- Fase 5: deriva temporal ---
 plotly==6.8.0
+
+# --- Fase 6: classificação supervisionada (núcleo do curso) ---
+# Modelo B — MLP densa (Keras Sequential / Dense / Dropout / Adam)
+tensorflow==2.21.0
+keras==3.14.1
 
 # --- Notebooks ---
 nbformat==5.10.4
