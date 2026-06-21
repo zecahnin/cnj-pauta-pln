@@ -212,35 +212,44 @@ O MLP Keras é o **melhor modelo geral**. O BERTimbau empata em F1-macro (0,79 v
 
 ### FASE 6b — NER (Extração de Entidades) ✅
 
-**Modelo:** `rhaymison/ner-portuguese-br-bert-cased` (mesmo do curso) via `transformers.pipeline("ner", aggregation_strategy="simple")`
+**Modelo:** `rhaymison/ner-portuguese-br-bert-cased` (mesmo do curso) via `transformers.pipeline("ner", aggregation_strategy="max")`
 
-| Métrica | Valor |
-|---------|-------|
-| **Entidades extraídas** | **10.536** (filtradas) |
-| Docs processados | 979 |
+**Limpeza da saída do NER (funil real, contagem em cada etapa).** A saída crua do modelo é ruidosa (fragmentos de subpalavra, preposições penduradas no span, substantivos comuns tageados como entidade, sem corte de confiança). Aplicado, nesta ordem: corte de score (`--min-score 0.90`) → limpeza de bordas funcionais → filtro de fragmento → filtro de genérico. Listas canônicas em `src/text_utils.py`.
 
-**Top 10 entidades:**
+| Etapa do funil | Entidades | % do bruto |
+|---|--:|--:|
+| Bruto (saída do modelo) | 11.971 | 100,0% |
+| Após corte de score (≥0,90) | 4.492 | 37,5% |
+| Após limpeza de bordas | 4.475 | 37,4% |
+| Após filtro de fragmento | 4.344 | 36,3% |
+| **Após filtro de genérico (final)** | **4.136** | **34,6%** |
 
-| Entidade | Ocorrências |
-|----------|:-----------:|
-| Conselho Nacional de Justiça | 628 |
-| Judiciário | 266 |
-| Tribunal | 169 |
-| Brasil | 155 |
-| Edson Fachin | 138 |
-| Nacional | 132 |
-| Tribunal de Justiça | 117 |
-| Justiça | 102 |
-| CNJ | 93 |
-| Supremo Tribunal Federal | 80 |
+O corte de confiança é, de longe, o filtro dominante (descarta 62,5% — entidades de baixa probabilidade). Docs processados: 979. Entidades distintas (chaves): 1.880.
 
-**Entidades por classe temática** (diferenciais):
-- **Direitos humanos:** Edson Fachin (51), Supremo (31)
-- **IA/Justiça 4.0:** PNUD (19), Conecta
+**Taxa de fragmento residual: 0,77%** (32/4.136 chaves ≤4 chars não-sigla). A amostra residual é majoritariamente composta por entidades **legítimas** curtas (Acre, Rio, EUA, Haia, USP, TJRN, TJAP), não por lixo de tokenizer — o resíduo de subpalavra ("##") foi a zero, mas siglas/topônimos curtos sobrevivem por construção e são contados com honestidade.
+
+**Top 10 entidades** (por nº de notícias distintas; `tipo` é informativo, não autoritativo):
+
+| Entidade | Notícias | Ocorrências |
+|----------|:--------:|:-----------:|
+| Conselho Nacional de Justiça | 409 | 428 |
+| Edson Fachin | 129 | 137 |
+| Brasília | 68 | 71 |
+| Programa das Nações Unidas para o Desenvolvimento | 40 | 42 |
+| Mauro Campbell Marques | 39 | 41 |
+| Maranhão | 27 | 30 |
+| Rio de Janeiro | 27 | 35 |
+| Amazonas | 22 | 27 |
+| Fábio Esteves | 22 | 24 |
+| João Paulo Schoucair | 20 | 20 |
+
+**Entidades por classe temática** (diferenciais; auto-referências do CNJ excluídas):
+- **Direitos humanos:** Edson Fachin (48), Corte Interamericana de Direitos Humanos (15)
+- **IA/Justiça 4.0:** PNUD (17), Rodrigo Badaró (9)
 - **Disciplinares:** Mauro Campbell Marques (16) — única classe com corregedor como top
-- **Sustentabilidade:** Guilherme Feliciano (8) — juiz com pauta ambiental
-- **Saúde:** Fórum Nacional do Judiciário para a Saúde (13)
-- **Sistema prisional:** Pena Justa (28)
+- **Sustentabilidade:** Guilherme Feliciano (5) — juiz com pauta ambiental
+- **Saúde:** Fórum Nacional do Judiciário para a Saúde (11)
+- **Sistema prisional:** Pernambuco (8), PNUD (8)
 
 ---
 
@@ -280,7 +289,7 @@ O MLP Keras é o **melhor modelo geral**. O BERTimbau empata em F1-macro (0,79 v
 3. **Dropout piora generalização** em TF-IDF esparso (val_loss +0,057 vs +0,015 sem reg)
 4. **L2 forte (1e-2) causa underfit** — val_loss flat em 1,49
 5. **Segfault TF+torch+numba** — resolvido com `src/tf_guard.py`
-6. **NER com fragmentos de subpalavra** ("##J", "##dor") — resolvido com filtro
+6. **NER com saída ruidosa** (fragmentos "##J"/"##dor", preposição pendurada, genéricos, sem corte de score) — **reduzido**, não eliminado: funil 11.971 brutos → 4.136 finais; fragmento residual 0,77% (siglas/topônimos curtos legítimos), resíduo de subpalavra a zero
 7. **κ real 0,79 vs relato anterior 0,91** — diferença é vazamento corrigido
 8. **Naive Bayes F1=0 em Precatórios** — classe pequena demais para NB
 9. **29% outliers HDBSCAN** — docs ambíguos descartados pelo clustering

@@ -28,9 +28,11 @@ exploratória** que *deriva a taxonomia* — não a avaliação formal.
   atinge **F1-macro 0,80 / kappa 0,79** e o **BERTimbau** **0,79 / 0,77** —
   *concordância substancial* com humanos; o **Naive Bayes** (baseline) fica em
   F1 0,50 / kappa 0,49.
-- **NER:** a comunicação é dominada por **Conselho Nacional de Justiça** (594
-  notícias), **Edson Fachin** (130), **STF** (60) e tribunais estaduais; cada
-  classe temática tem entidades características.
+- **NER:** após limpeza da saída crua (corte de score ≥0,90 + remoção de bordas
+  funcionais + filtros de fragmento e genérico; funil 11.971 → 4.136 entidades),
+  a comunicação é dominada por **Conselho Nacional de Justiça** (409 notícias),
+  **Edson Fachin** (129), o **PNUD** (40) e tribunais/estados (Brasília, Maranhão,
+  Rio de Janeiro); cada classe temática tem entidades características.
 - **Pauta em alta (deriva estrutural):** *Justiça itinerante / cidadania /
   PopRuaJud* e *IA / Conecta / Justiça 4.0* — crescimento invisível na taxonomia
   de origem. **Em queda (sazonal):** *violência doméstica* (março/Mês da Mulher) e
@@ -75,7 +77,8 @@ exploratória** que *deriva a taxonomia* — não a avaliação formal.
 | 6 | **MLP** — gold acc / F1-macro / kappa | 0,809 / 0,798 / 0,788 |
 | 6 | **BERTimbau** — gold acc / F1-macro / kappa | 0,792 / 0,787 / 0,769 |
 | 6 | **Naive Bayes** — gold acc / F1-macro / kappa | 0,543 / 0,496 / 0,490 |
-| 6b | Entidades extraídas (filtradas) | 10.536 |
+| 6b | Entidades NER (bruto → final após funil de limpeza) | 11.971 → 4.136 |
+| 6b | Fragmento residual (chaves ≤4 chars não-sigla) | 0,77% |
 
 > Detalhamento e **resultados negativos** (colapso inicial em 2 tópicos, Dropout
 > sem ganho, classe com F1 baixo) em `docs/` e nos notebooks.

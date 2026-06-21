@@ -147,6 +147,26 @@ as mitigações efetivamente adotadas (ou a ausência delas).
   overfit/underfit + regularização Dropout/L2 (B), BERTimbau/Transformers (C +
   NER), embeddings (Fase 4 + C), split treino/val/teste estratificado (Fase 6).
 
+- **O NER é confiável? A saída foi limpa ou maquiada?** **Reduzida, não
+  perfeita — e medida.** A saída crua do modelo pt-BR é ruidosa: 11.971 spans
+  brutos com fragmentos de subpalavra ("##J"), preposições penduradas
+  ("Tribunal de Justiça **do**"), substantivos comuns tageados como entidade
+  ("Judiciário", "Brasil", "Federal") e **nenhum corte de confiança** (score
+  mínimo bruto 0,19). Aplicamos um funil explícito e auditável (`src/ner.py`,
+  listas canônicas em `src/text_utils.py`): corte de score ≥0,90 → limpeza de
+  bordas funcionais → filtro de fragmento → filtro de genérico, restando **4.136
+  entidades finais** (34,6% do bruto; o corte de score sozinho descarta 62,5%).
+  A **taxa de fragmento residual é 0,77%** (32 chaves ≤4 chars não-sigla) e
+  consiste majoritariamente em entidades **legítimas** curtas (Acre, Rio, EUA,
+  Haia, USP, TJRN), não em lixo de tokenizer — o resíduo de subpalavra "##"
+  caiu a zero. Limitações que **permanecem**: (i) o rótulo de tipo
+  (PER/ORG/LOC) do modelo é ruidoso e é tratado como informativo, não
+  autoritativo; (ii) processamos só título + lead (≤1.500 chars do corpo), então
+  entidades que só aparecem no fim de notícias longas escapam; (iii) o corte de
+  0,90 troca recall por precisão — entidades reais de baixa confiança são
+  perdidas. As contagens do NER devem ser lidas como **ordens de grandeza da
+  saliência**, não como um censo exato de entidades.
+
 ## 3. LGPD / ética
 
 - O acervo é jornalístico, público e institucional. Há **nomes de magistrados**
