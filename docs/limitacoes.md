@@ -58,18 +58,30 @@ as mitigações efetivamente adotadas (ou a ausência delas).
 - **Detecção de picos frágil:** z-score sobre série semanal curta (26 semanas);
   o limiar 1,5 é arbitrário e tópicos pequenos têm alta variância (picos de n=4–5).
 
-### Validação supervisionada (Fase 6)
-- **Anotador único** (o assistente). **Não há concordância inter-anotador**
-  independente; o kappa reportado é predição×gold e rótulo-fraco×gold, não
-  humano×humano. Risco de o anotador, ciente da taxonomia do modelo, **alinhar-se
-  inconscientemente** a ele.
-- **Gold pequeno (173 rótulos)** e estratificado pelos próprios rótulos fracos,
-  o que pode **superrepresentar** casos "fáceis" de cada tópico.
-- **Independência apenas parcial:** TF-IDF é um espaço distinto do de embeddings,
-  mas os *rótulos* de treino vêm do BERTopic (derivado de embeddings). A validação
-  mede consistência, não verdade externa absoluta.
-- **F1=0,91 é otimista:** exclui 22 casos `indefinido` (~11% da amostra) —
-  justamente os difíceis. Incluí-los reduziria as métricas.
+### Classificação supervisionada (Fase 6 — núcleo)
+- **Anotador humano único** (a dupla/trio do trabalho). **Não há concordância
+  inter-anotador** independente; o kappa reportado é predição×gold humano, não
+  humano×humano. Risco de o anotador, ciente da taxonomia do modelo,
+  **alinhar-se inconscientemente** a ela.
+- **Gold pequeno (173 rótulos + 22 'indefinido')**, anotado contra os 10 rótulos
+  da taxonomia da Fase 4.
+- **Rótulos de TREINO são fracos:** vêm do BERTopic (`topic_raw`), não de humano.
+  Mede-se se classificadores de features independentes (TF-IDF / embeddings
+  BERTimbau) **reproduzem** a taxonomia e **concordam com o humano** — não a
+  verdade absoluta. As features (TF-IDF lexical; embeddings BERTimbau) são um
+  espaço distinto do UMAP/HDBSCAN que gerou os clusters, reduzindo circularidade.
+- **Métricas honestas, sem vazamento:** ao contrário da validação antiga
+  (`src/supervised.py`, kappa ≈ 0,91, que treinava com o gold dentro do conjunto),
+  a Fase 6 **remove o gold do treino** (162/173 também eram rótulo fraco). O
+  resultado cai para **kappa ≈ 0,77–0,79** (MLP/BERTimbau) — *concordância
+  substancial*, e a leitura correta da independência.
+- **NB falha em classes pequenas:** F1=0,0 em "Precatórios" (28 docs de treino) —
+  baseline insuficiente; documentado, não mascarado.
+- **`indefinido` excluído das métricas:** 22 casos (~11%) — justamente os
+  ambíguos/difíceis. Incluí-los reduziria os números reportados.
+- **Resultado negativo do Dropout:** em features TF-IDF esparsas com poucos
+  dados, o Dropout **não corrigiu** o overfit (piorou `val_loss`); quem controla
+  é o **L2 moderado** e o **EarlyStopping**. Reportado como achado, não escondido.
 
 ## 2. Auto-auditoria adversarial
 
@@ -94,16 +106,46 @@ as mitigações efetivamente adotadas (ou a ausência delas).
 
 - **"O gold set foi rotulado pela mesma entidade que rodou o modelo → kappa
   inflado."** Limitação real e assumida. Mitigação parcial: rotulação por leitura
-  de título/lead, com correção de erros do modelo (ex.: feminicídio→saúde) — o que
-  mostra independência de julgamento em casos concretos, mas não substitui um
-  segundo anotador humano.
+  de título/lead, com correção de erros do modelo — o que mostra independência de
+  julgamento em casos concretos, mas não substitui um segundo anotador humano.
 
-- **"F1 0,91 com 29% de outliers descartados é seletivo."** Correto: as métricas
-  vivem no subconjunto de alta confiança. O texto reporta ambos (F1 intrínseco
-  0,81 no espaço completo de rótulos fracos; 0,91 contra gold limpo).
+- **"Você treinou no gold e testou no gold → métrica inflada."** Não nesta versão.
+  O gold é **removido do treino** (162/173 também eram rótulo fraco). Por isso o
+  kappa caiu de ~0,91 (validação antiga, com vazamento) para ~0,79 — é a versão
+  honesta.
+
+- **"Dropout não ajudou, então a MLP está errada?"** Não — o achado é legítimo:
+  em features TF-IDF esparsas com amostra pequena, Dropout pode prejudicar. A
+  análise mostra L2 moderado controlando o overfit e L2 forte gerando underfit
+  (trade-off viés-variância). O modelo final usa Dropout + EarlyStopping conforme
+  a arquitetura pedida no curso; o resultado é reportado como é.
 
 - **"Tudo isso generaliza?"** Não. É um estudo de caso de 6 meses de **um** órgão.
   Não se afirma validade externa para outros períodos ou instituições.
+
+## 2b. Respostas diretas à auto-auditoria exigida
+
+- **O gold é humano e independente?** **Humano, sim** (anotação manual contra a
+  taxonomia). **Independente, parcialmente:** anotador único, sem segundo
+  anotador; mas é **removido do treino** (sem vazamento) e as features dos
+  classificadores são distintas do espaço que gerou os rótulos fracos.
+- **Outliers/indefinidos foram excluídos das métricas?** **Sim, e está
+  declarado.** Treino usa rótulos fracos de alta confiança (`topic_raw != -1`);
+  os 22 `indefinido` do gold são excluídos. A taxa bruta de outliers (29,42%) é
+  reportada honestamente em `topic_eval.csv`.
+- **Overfit foi observado e tratado?** **Sim.** `train_acc=1,0` vs `val_acc≈0,80`
+  e subida de `val_loss` evidenciam overfit; tratado por **EarlyStopping** (modelo
+  principal) e estudado com Dropout (não ajudou) e L2 (ajudou). Figuras 14 e 14b.
+- **Por que classificação supervisionada e não só topic modeling?** Porque a
+  **avaliação formal** do curso exige aprendizado supervisionado com técnicas
+  específicas (TF-IDF, Naive Bayes, redes densas, Dropout, transformers) e medição
+  contra **gold humano**. O BERTopic permanece como **descoberta exploratória**
+  que *deriva a taxonomia*; ele não é avaliável contra verdade humana por si só.
+- **Quais técnicas do curso foram usadas e onde?** Ver o *mapa de cobertura* no
+  notebook `04_supervised_classification.ipynb` (seção 7) e no README: BoW/TF-IDF
+  (Modelos A/B), Naive Bayes (A), rede densa Keras/ReLU/softmax/Adam (B),
+  overfit/underfit + regularização Dropout/L2 (B), BERTimbau/Transformers (C +
+  NER), embeddings (Fase 4 + C), split treino/val/teste estratificado (Fase 6).
 
 ## 3. LGPD / ética
 
@@ -115,9 +157,11 @@ as mitigações efetivamente adotadas (ou a ausência delas).
 
 ## 4. Trabalhos futuros
 
-- Segundo anotador humano + concordância inter-anotador (kappa de Cohen real).
+- Segundo anotador humano + concordância inter-anotador (kappa de Cohen real) e
+  rotulação do `reports/gold_template.csv` por mais de um anotador.
 - Janela de 12+ meses para separar sazonalidade de tendência estrutural.
-- Modelo de embeddings pt-BR nativo (BERTimbau) como comparação ao multilíngue.
+- **Fine-tuning** do BERTimbau (em vez de embeddings congelados + LogReg) para a
+  classificação, comparando com a MLP sobre TF-IDF.
 - Fontes externas auditáveis de eventos (DOU, atos normativos do CNJ) para
   cruzamento causal mais forte.
 - Análise de subtópicos hierárquica para os tópicos largos (T0, T3, T9).
