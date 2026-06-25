@@ -11,15 +11,17 @@ técnicas do curso:
     C. BERTimbau        — embeddings BERT-pt (mean-pooling) + LogReg    (transformer)
 
 Protocolo de avaliação (sem vazamento):
-- **Rótulo fraco** = `topic_raw` do BERTopic (alta confiança; exclui outliers -1).
+- **Rótulo fraco** = `classe_id` consolidado (taxonomia de 30 classes, 0-29),
+  derivado do BERTopic e no MESMO espaço de rótulos do gold humano. Os outliers
+  do BERTopic (topic_raw == -1) são excluídos da pool.
 - O **gold humano** (`reports/gold_labels.csv`) é REMOVIDO do conjunto de treino,
-  pois 162/173 documentos do gold também têm rótulo fraco — treinar neles
-  inflaria a métrica externa.
+  pois grande parte dos documentos do gold também tem rótulo fraco — treinar
+  neles inflaria a métrica externa.
 - **Regime interno** (aprende o rótulo fraco): split estratificado
-  treino/validação/teste sobre a "pool" (529 docs com rótulo fraco e fora do
-  gold). Mede se o modelo aprende a taxonomia a partir de features independentes.
+  treino/validação/teste sobre a "pool" (docs com rótulo fraco e fora do gold).
+  Mede se o modelo aprende a taxonomia a partir de features independentes.
 - **Regime externo** (vs gold humano): cada modelo é treinado na pool INTEIRA e
-  prediz os 173 documentos do gold; reporta accuracy, F1-macro, Cohen's kappa e
+  prediz os 300 documentos do gold; reporta accuracy, F1-macro, Cohen's kappa e
   matriz de confusão contra a anotação humana. Esta é a validação de cabeçalho.
 
 Análise de overfit/underfit (peça central do Módulo 2): a MLP é treinada em duas
@@ -88,10 +90,15 @@ def set_seeds() -> None:
 def load_data() -> tuple[pd.DataFrame, pd.DataFrame, set[int], int]:
     """Retorna (pool, gold_df, gold_ids, n_indefinido).
 
-    pool: docs com rótulo fraco (topic_raw != -1) e FORA do gold.
+    pool: docs com rótulo fraco e FORA do gold. O rótulo fraco `y` é o
+    `classe_id` consolidado (taxonomia de 30 classes, 0-29) — NÃO o `topic_raw`
+    bruto do BERTopic (0-45+), que vive em outro espaço de rótulos e não casa
+    com o gold humano nem com o softmax de 30 saídas. Os outliers do BERTopic
+    (topic_raw == -1) seguem excluídos da pool.
     gold_df: docs do gold com rótulo humano inteiro (exclui 'indefinido').
     """
-    dt = pd.read_parquet(PROC / "doc_topics.parquet")[["id", "topic_raw"]]
+    dt = pd.read_parquet(PROC / "doc_topics.parquet")[
+        ["id", "topic_raw", "classe_id"]]
     txt = pd.read_parquet(INTERIM)[["id", "titulo", "corpo_texto", "corpo_norm"]]
     df = dt.merge(txt, on="id")
     # Features TF-IDF: título + corpo normalizado (espaço lexical).
@@ -108,9 +115,10 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame, set[int], int]:
     gold_ids = set(gold_ok["id"])
     gold_df = gold_ok.merge(df, on="id")
 
-    weak = df[df["topic_raw"] != -1].copy()
+    weak = df[df["topic_raw"] != -1].copy()  # exclui outliers do BERTopic
     pool = weak[~weak["id"].isin(gold_ids)].copy()
-    pool = pool.rename(columns={"topic_raw": "y"})
+    # Rótulo fraco = classe consolidada (0-29), no MESMO espaço do gold humano.
+    pool = pool.rename(columns={"classe_id": "y"})
     print(f"[clf] pool de treino (rótulo fraco, fora do gold): {len(pool)} docs "
           f"| gold humano: {len(gold_df)} (+{n_indef} 'indefinido' excluídos)")
     return pool, gold_df, gold_ids, n_indef
@@ -544,6 +552,16 @@ def main() -> None:
         preds["BERTimbau"] = results["bertimbau"]["_gold_pred"]
     plot_confusions(gold_df["gold"].to_numpy(), preds)
 
+    # Persiste as predições do gold (artefato reproduzível p/ análise de confusão).
+    gold_pred_dump = {
+        "gold_ids": gold_df["id"].astype(int).tolist(),
+        "gold_true": gold_df["gold"].astype(int).tolist(),
+        "preds": {name: [int(p) for p in pr] for name, pr in preds.items()},
+    }
+    with (PROC / "classify_gold_preds.json").open("w", encoding="utf-8") as fh:
+        json.dump(gold_pred_dump, fh, ensure_ascii=False, indent=2)
+    print(f"[clf] predições do gold -> {PROC / 'classify_gold_preds.json'}")
+
     # Tabela-resumo
     print("\n[clf] ===== COMPARAÇÃO DOS MODELOS =====")
     header = f"{'modelo':<12} {'int_acc':>8} {'int_f1':>8} {'gold_acc':>9} {'gold_f1':>8} {'kappa':>7}"
@@ -564,7 +582,8 @@ def main() -> None:
             "split": {"treino": int(len(tr)), "val": int(len(va)),
                       "teste": int(len(te))},
             "seed": SEED,
-            "leakage_note": "gold removido do treino (162/173 também eram rótulo fraco)",
+            "leakage_note": "gold removido do treino; rótulo fraco = classe_id consolidado (0-29)",
+            "weak_label": "classe_id (taxonomia consolidada 30 classes)",
         },
         "models": {k: {kk: vv for kk, vv in v.items() if not kk.startswith("_")}
                    for k, v in results.items()},
