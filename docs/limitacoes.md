@@ -4,6 +4,53 @@ Documento de honestidade metodológica. Registra limitações conhecidas e subme
 o trabalho a uma crítica adversarial — "o que um avaliador cético diria?" — com
 as mitigações efetivamente adotadas (ou a ausência delas).
 
+## 0. Atualização de fechamento (corpus de 24 meses, gold de 300)
+
+> **As seções 1–4 abaixo refletem um snapshot ANTERIOR** (6 meses, 979 notícias,
+> gold de 173+22, 10 tópicos, kappa ~0,77–0,79). O projeto foi reexecutado num
+> corpus maior e com protocolo corrigido; esta seção registra o estado final.
+> Detalhes completos em `reports/RESUMO_FINAL.md`.
+
+**Correções de fato:**
+- **Corpus:** 4.394 notícias, **~24 meses** (21/06/2024–19/06/2026), não 979/6m.
+- **Gold:** **300** notícias humanas, **0 `indefinido`** na versão atual; espaço
+  de rótulos = **30 classes** (taxonomia consolidada), com fusões opt-in p/ 12 e 10.
+- **BERTopic:** `min_topic_size=20` venceu → **46 tópicos** (não 10) → consolidados
+  em **30 classes**; **outliers = 55,5%** (não 29%). Os 56% de outliers passaram a
+  ser o fato central de limitação.
+
+**Bug corrigido (importante):** o rótulo fraco usava `topic_raw` (id bruto do
+BERTopic, 0–45), que vive em outro espaço que o gold (0–29) e estourava a MLP +
+invalidava a métrica externa. Corrigido para `classe_id` consolidado.
+
+**Métricas reais (régua externa, vs. gold de 300, melhor = MLP):**
+- 30 classes: F1 0,492 / kappa 0,480 · 12 classes: 0,657 / 0,592 ·
+  **10 classes: 0,705 / 0,615** (concordância substancial).
+- O kappa antigo de ~0,77–0,79 era de um corpus/escopo menores e não se sustenta
+  no corpus completo de 30 classes — a leitura honesta é F1 ~0,49–0,71 conforme
+  a granularidade.
+
+**Novos achados de limitação (medidos):**
+- **Teto humano ~0,81.** Uma re-anotação humana dos 300 docs concorda com a
+  anotação original só **70,3% (30 cls) / 80,7% (10 cls)** (kappa 0,68 / 0,77).
+  Logo o teto da tarefa NÃO é 1,0; o MLP (0,705) já opera perto dele. Isso
+  **responde parcialmente** a crítica do "anotador único": há agora uma segunda
+  passada humana, e a concordância intra-humana é o teto real.
+- **Teto do rótulo fraco ~0,75.** O rótulo do BERTopic concorda com o gold 0,75
+  (F1, 12 cls) — o "professor" é o limite do "aluno".
+- **Outliers dominam (56%) e o pool não os representa.** O MLP cai de F1 0,70
+  (clusterizados) p/ 0,58 (outliers). Rotular outliers e treinar neles rende
+  **só +0,05 (MLP), 0 (NB/BERT)**, medido SEM vazamento por validação cruzada
+  (`exp_outliers.py`) — a barreira é a ambiguidade, não a falta de dados.
+- **Ganho das fusões é em parte mecânico.** Subir 30→12→10 melhora o F1, mas o
+  kappa sobe menos (remoção de classes minúsculas infla o macro-F1). Não
+  superinterpretar o 0,705.
+
+**Risco metodológico evitado:** a re-anotação entregue como "outliers novos"
+coincidia 300/300 com o gold; mesclá-la ao treino seria **vazamento** (treino no
+teste). Foi recusada e medida de forma válida (CV). Ver `adjudicate.py` /
+`exp_outliers.py`.
+
 ## 1. Limitações por fase
 
 ### Coleta (Fase 1)
