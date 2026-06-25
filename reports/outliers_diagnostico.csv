@@ -1,0 +1,151 @@
+id,classe_sugerida_id,classe_sugerida,sim1,sim2,margem
+412907,0,Processos disciplinares,0.6081,0.5027,0.1054
+355935,0,Processos disciplinares,0.1205,0.1023,0.0182
+377377,0,Processos disciplinares,0.3588,0.3001,0.0586
+380297,1,Equidade racial,0.1443,0.1313,0.013
+364954,1,Equidade racial,0.5883,0.415,0.1733
+355657,1,Equidade racial,0.3157,0.2796,0.036
+335648,2,Violência doméstica / mulheres,0.4598,0.3401,0.1197
+416360,2,Violência doméstica / mulheres,0.3576,0.3449,0.0127
+401980,2,Violência doméstica / mulheres,0.5662,0.3369,0.2292
+361262,2,Violência doméstica / mulheres,0.7225,0.3015,0.4211
+412762,2,Violência doméstica / mulheres,0.182,0.1783,0.0037
+413062,2,Violência doméstica / mulheres,0.5018,0.2566,0.2453
+340660,2,Violência doméstica / mulheres,0.4057,0.3664,0.0393
+382522,2,Violência doméstica / mulheres,0.3233,0.2621,0.0612
+381512,3,Conciliação e mediação,0.2629,0.257,0.0059
+364244,3,Conciliação e mediação,0.4629,0.313,0.1499
+356490,3,Conciliação e mediação,0.3481,0.1715,0.1766
+403261,3,Conciliação e mediação,0.4013,0.3218,0.0795
+335900,3,Conciliação e mediação,0.7163,0.3311,0.3852
+357585,3,Conciliação e mediação,0.1229,0.0987,0.0243
+413005,4,IA / Justiça 4.0,0.4376,0.2673,0.1703
+358275,4,IA / Justiça 4.0,0.1805,0.1511,0.0295
+413239,4,IA / Justiça 4.0,0.3166,0.251,0.0656
+362474,4,IA / Justiça 4.0,0.3849,0.3204,0.0645
+414917,4,IA / Justiça 4.0,0.5621,0.5514,0.0107
+371738,4,IA / Justiça 4.0,0.6971,0.4665,0.2307
+368429,4,IA / Justiça 4.0,0.4855,0.4723,0.0132
+362350,5,Corregedoria / Inspeção,0.3309,0.2454,0.0855
+353833,5,Corregedoria / Inspeção,0.1799,0.1632,0.0167
+410138,5,Corregedoria / Inspeção,0.6871,0.3169,0.3702
+340397,5,Corregedoria / Inspeção,0.3864,0.3234,0.0629
+358272,6,Justiça Itinerante / cidadania,0.3845,0.2694,0.1151
+357559,6,Justiça Itinerante / cidadania,0.1742,0.1626,0.0116
+377231,6,Justiça Itinerante / cidadania,0.5162,0.3931,0.1231
+376966,6,Justiça Itinerante / cidadania,0.472,0.3899,0.0821
+414886,6,Justiça Itinerante / cidadania,0.3516,0.3388,0.0129
+384539,6,Justiça Itinerante / cidadania,0.6783,0.5415,0.1368
+334227,6,Justiça Itinerante / cidadania,0.56,0.4689,0.091
+339324,6,Justiça Itinerante / cidadania,0.2949,0.2486,0.0463
+335197,6,Justiça Itinerante / cidadania,0.4274,0.3078,0.1196
+401973,7,Socioeducativo,0.4095,0.3528,0.0566
+388033,7,Socioeducativo,0.2863,0.2722,0.0141
+377387,7,Socioeducativo,0.7632,0.4654,0.2978
+361459,7,Socioeducativo,0.1477,0.1403,0.0073
+401068,7,Socioeducativo,0.6199,0.3896,0.2303
+369000,7,Socioeducativo,0.5034,0.4636,0.0398
+392241,7,Socioeducativo,0.5697,0.3068,0.2629
+364304,8,Participação feminina,0.5521,0.2882,0.2639
+389829,8,Participação feminina,0.1736,0.1323,0.0413
+415317,9,Direitos humanos / Corte IDH,0.3857,0.3198,0.066
+372500,9,Direitos humanos / Corte IDH,0.1595,0.1148,0.0447
+412236,9,Direitos humanos / Corte IDH,0.6042,0.4651,0.1391
+342418,9,Direitos humanos / Corte IDH,0.3101,0.25,0.0601
+409811,10,Institucional / Gestão,0.4824,0.3154,0.167
+412446,10,Institucional / Gestão,0.3362,0.211,0.1252
+361510,10,Institucional / Gestão,0.2875,0.1783,0.1093
+395972,10,Institucional / Gestão,0.3988,0.2557,0.1431
+335504,10,Institucional / Gestão,0.3614,0.2196,0.1418
+365855,10,Institucional / Gestão,0.5964,0.2712,0.3253
+384360,10,Institucional / Gestão,0.138,0.0905,0.0475
+396645,10,Institucional / Gestão,0.4363,0.3222,0.114
+341933,11,Precatórios,0.372,0.3267,0.0453
+359542,11,Precatórios,0.4753,0.3342,0.1412
+354762,11,Precatórios,0.6994,0.6015,0.0979
+340570,11,Precatórios,0.4158,0.3962,0.0195
+363572,11,Precatórios,0.5436,0.4018,0.1417
+344955,11,Precatórios,0.22,0.1733,0.0467
+360220,12,Transparência,0.3074,0.2917,0.0157
+406685,12,Transparência,0.4308,0.3412,0.0896
+352550,12,Transparência,0.2328,0.2121,0.0208
+336308,12,Transparência,0.7142,0.3306,0.3836
+394131,12,Transparência,0.4953,0.3369,0.1585
+385605,12,Transparência,0.3415,0.3399,0.0016
+339319,12,Transparência,0.3825,0.2691,0.1134
+367367,13,LGBTQIA+,0.1673,0.1435,0.0237
+395540,13,LGBTQIA+,0.2872,0.2813,0.0059
+393465,13,LGBTQIA+,0.4459,0.326,0.1199
+344470,14,Sistema prisional,0.3154,0.2289,0.0865
+337437,14,Sistema prisional,0.1833,0.1591,0.0242
+410310,14,Sistema prisional,0.3954,0.1804,0.2151
+343421,14,Sistema prisional,0.4587,0.2348,0.224
+370810,14,Sistema prisional,0.6454,0.5825,0.0629
+384134,14,Sistema prisional,0.5179,0.3034,0.2144
+344239,15,Inclusão PCDs,0.6272,0.3813,0.2459
+365305,15,Inclusão PCDs,0.1532,0.136,0.0172
+346717,15,Inclusão PCDs,0.2702,0.2495,0.0207
+337236,15,Inclusão PCDs,0.3342,0.3197,0.0145
+416033,16,Inovação,0.625,0.4636,0.1614
+399743,16,Inovação,0.1546,0.1522,0.0024
+369194,16,Inovação,0.3713,0.2502,0.1211
+376537,16,Inovação,0.2988,0.1885,0.1103
+353357,16,Inovação,0.4582,0.4535,0.0048
+389068,17,Regularização fundiária,0.3929,0.3122,0.0807
+387407,17,Regularização fundiária,0.6992,0.4162,0.283
+414008,17,Regularização fundiária,0.3177,0.3075,0.0102
+336824,17,Regularização fundiária,0.1711,0.1385,0.0326
+374097,18,Domicílio Judicial Eletrônico,0.3851,0.2942,0.0909
+412651,18,Domicílio Judicial Eletrônico,0.3474,0.3286,0.0189
+376959,18,Domicílio Judicial Eletrônico,0.5301,0.3233,0.2068
+347918,18,Domicílio Judicial Eletrônico,0.443,0.3313,0.1117
+398544,18,Domicílio Judicial Eletrônico,0.1722,0.1695,0.0027
+409099,18,Domicílio Judicial Eletrônico,0.4991,0.317,0.1821
+375150,18,Domicílio Judicial Eletrônico,0.7303,0.4112,0.3191
+348560,19,Justiça Eleitoral,0.6328,0.2763,0.3565
+383760,19,Justiça Eleitoral,0.1974,0.1956,0.0018
+366894,19,Justiça Eleitoral,0.3277,0.2867,0.041
+342183,20,Linguagem simples,0.214,0.2053,0.0087
+362061,20,Linguagem simples,0.6449,0.3576,0.2873
+354301,20,Linguagem simples,0.4211,0.2214,0.1998
+348174,21,Saúde / judicialização,0.3861,0.2927,0.0934
+392062,21,Saúde / judicialização,0.585,0.2198,0.3652
+341877,21,Saúde / judicialização,0.4525,0.1782,0.2744
+412433,21,Saúde / judicialização,0.1545,0.1491,0.0054
+348479,22,ENAC / Exame de cartórios,0.5911,0.5609,0.0302
+380273,22,ENAC / Exame de cartórios,0.246,0.243,0.003
+381671,22,ENAC / Exame de cartórios,0.3547,0.3183,0.0365
+370866,23,Sustentabilidade / Pauta verde,0.1174,0.0917,0.0257
+375624,23,Sustentabilidade / Pauta verde,0.4883,0.2695,0.2187
+343255,23,Sustentabilidade / Pauta verde,0.2896,0.1828,0.1067
+353712,23,Sustentabilidade / Pauta verde,0.3595,0.2496,0.1099
+402488,23,Sustentabilidade / Pauta verde,0.4162,0.1964,0.2198
+407481,23,Sustentabilidade / Pauta verde,0.6822,0.2994,0.3829
+359078,24,Execuções fiscais,0.3061,0.2923,0.0138
+368310,24,Execuções fiscais,0.3806,0.3664,0.0142
+363570,24,Execuções fiscais,0.662,0.534,0.128
+336112,24,Execuções fiscais,0.1576,0.132,0.0257
+382326,24,Execuções fiscais,0.462,0.36,0.1021
+385310,25,PopRuaJud,0.6715,0.5289,0.1425
+334894,25,PopRuaJud,0.5417,0.5057,0.036
+406521,25,PopRuaJud,0.433,0.3567,0.0763
+348928,25,PopRuaJud,0.3829,0.3725,0.0104
+335744,25,PopRuaJud,0.2163,0.2146,0.0017
+357962,25,PopRuaJud,0.3088,0.301,0.0078
+343054,26,Trabalho escravo / tráfico,0.3361,0.2084,0.1277
+396903,26,Trabalho escravo / tráfico,0.2455,0.2323,0.0132
+348432,26,Trabalho escravo / tráfico,0.6062,0.4013,0.2049
+378648,26,Trabalho escravo / tráfico,0.4398,0.303,0.1368
+416604,27,Litigância / ações coletivas,0.3115,0.3035,0.008
+372348,27,Litigância / ações coletivas,0.6375,0.6166,0.0208
+393879,27,Litigância / ações coletivas,0.181,0.1754,0.0056
+341943,27,Litigância / ações coletivas,0.3802,0.3395,0.0407
+359148,28,Infância e juventude,0.2125,0.2015,0.011
+414838,28,Infância e juventude,0.6475,0.233,0.4146
+405823,28,Infância e juventude,0.3604,0.3556,0.0048
+392565,28,Infância e juventude,0.2917,0.225,0.0667
+374389,28,Infância e juventude,0.4392,0.4306,0.0086
+385688,29,Conflitos fundiários,0.6827,0.2929,0.3899
+337394,29,Conflitos fundiários,0.3836,0.2959,0.0877
+416960,29,Conflitos fundiários,0.4998,0.3776,0.1222
+401806,29,Conflitos fundiários,0.1945,0.1556,0.039
