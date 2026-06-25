@@ -53,6 +53,62 @@ TAXONOMY = {
 # traduzir o `classe_final` (texto) do mapa de consolidação no id numérico.
 CLASS_NAME_TO_ID = {name: cid for cid, name in TAXONOMY.items()}
 
+# --------------------------------------------------------------------------- #
+# Fusão para 12 classes (decisão do dono, 24/06/2026).
+#
+# Motivação (medida nos dados, não no chute): a taxonomia de 30 classes tem 4
+# classes SEM nenhum gold (3 Conciliação, 11 Precatórios, 12 Transparência, 26
+# Trabalho escravo) e várias com n<6, o que torna o macro-F1 instável e infla a
+# confusão entre vizinhos temáticos. As fusões abaixo absorvem 35 dos 149 erros
+# do MLP vs gold (acc 0.503 -> ~0.62 sem nem retreinar) e sobem o suporte médio
+# de ~10 para ~25 docs/classe. Critérios por fusão: (1) coesão temática,
+# (2) pares que mais se confundem na matriz vs gold, (3) suporte final >= ~15.
+#
+# A TAXONOMY de 30 classes permanece INTACTA (drift/topics/ner dependem dela);
+# o esquema fundido é OPT-IN via `classify.py --merged`.
+# --------------------------------------------------------------------------- #
+TAXONOMY_MERGED = {
+    0: "Gestão institucional e transparência",
+    1: "Corregedoria, disciplina e cartórios",
+    2: "Tecnologia, inovação e Justiça 4.0",
+    3: "Direitos humanos, igualdade e diversidade",
+    4: "Violência doméstica e proteção à mulher",
+    5: "Acesso à justiça, cidadania e conciliação",
+    6: "Questões fundiárias",
+    7: "Infância, juventude e socioeducativo",
+    8: "Sistema prisional",
+    9: "Judicialização, execução fiscal e precatórios",
+    10: "Sustentabilidade / Pauta verde",
+    11: "Justiça Eleitoral",
+}
+
+# Classe fundida (0-11) -> lista de classes consolidadas (0-29) que a compõem.
+# Deve cobrir as 30 classes EXATAMENTE uma vez (validado no import).
+MERGE_GROUPS = {
+    0: [10, 12],            # Institucional + Transparência
+    1: [5, 0, 22],          # Corregedoria + Proc. disciplinares + ENAC/cartórios
+    2: [4, 16, 18],         # IA + Inovação + Domicílio Judicial Eletrônico
+    3: [1, 8, 9, 13, 26, 15],  # Equidade racial+fem.+DH/IDH+LGBTQIA++trab.escravo+PCD
+    4: [2],                 # Violência doméstica (isolada: sinal limpo, F1 0.84)
+    5: [6, 25, 20, 3],      # Itinerante + PopRua + Linguagem simples + Conciliação
+    6: [17, 29],            # Regularização + Conflitos fundiários
+    7: [28, 7],             # Infância e juventude + Socioeducativo
+    8: [14],                # Sistema prisional (isolado)
+    9: [21, 24, 11, 27],    # Saúde/judic. + Exec. fiscal + Precatórios + Litigância
+    10: [23],               # Sustentabilidade (isolada)
+    11: [19],               # Justiça Eleitoral (isolada)
+}
+MERGE_MAP = {old: new for new, olds in MERGE_GROUPS.items() for old in olds}
+assert sorted(MERGE_MAP) == list(range(len(TAXONOMY))), (
+    "MERGE_MAP deve cobrir as 30 classes da TAXONOMY exatamente uma vez")
+
+
+def merge_class_id(classe_id: int) -> int:
+    """Classe consolidada (0-29) -> classe fundida (0-11). Preserva -1 (outlier)."""
+    if classe_id == -1:
+        return -1
+    return MERGE_MAP[int(classe_id)]
+
 # Mapa de consolidação (decisão do dono): tópico bruto do BERTopic -> classe
 # consolidada. É a FONTE DE VERDADE para rotular cada tópico por classe; NÃO se
 # assume que a numeração do BERTopic (por tamanho) case com a taxonomia.

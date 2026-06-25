@@ -63,8 +63,8 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from text_utils import (  # noqa: E402
-    MIN_CLASS_DOCS_RECENT, OUTROS_LABEL, TAXONOMY, get_stopwords,
-    small_classes_for_window)
+    MIN_CLASS_DOCS_RECENT, MERGE_MAP, OUTROS_LABEL, TAXONOMY, TAXONOMY_MERGED,
+    get_stopwords, merge_class_id, small_classes_for_window)
 
 INTERIM = PROJECT_ROOT / "data" / "interim" / "noticias_limpo.parquet"
 PROC = PROJECT_ROOT / "data" / "processed"
@@ -76,6 +76,21 @@ SEED = 42
 MAX_FEATURES = 5000
 N_CLASSES = len(TAXONOMY)
 CLASS_NAMES = [TAXONOMY[i] for i in range(N_CLASSES)]
+
+# Esquema fundido (12 classes) é opt-in: --merged reatribui os globais acima e
+# liga o remapeamento do rótulo fraco/gold via MERGE_MAP. Default = 30 classes.
+MERGED = False
+
+
+def fig_path(stem: str) -> Path:
+    """Caminho de figura com sufixo '_merged' quando no esquema fundido, para
+    não sobrescrever as figuras das 30 classes."""
+    return FIG / f"{stem}{'_merged' if MERGED else ''}.png"
+
+
+def proc_path(stem: str) -> Path:
+    """Idem para artefatos JSON em data/processed."""
+    return PROC / f"{stem}{'_merged' if MERGED else ''}.json"
 
 
 def set_seeds() -> None:
@@ -108,20 +123,54 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame, set[int], int]:
     df["text_bert"] = (df["titulo"].fillna("") + ". "
                        + df["corpo_texto"].fillna(""))
 
+    # Esquema fundido: rótulo fraco e gold passam de 30 -> 12 classes (MERGE_MAP).
+    if MERGED:
+        df["classe_id"] = df["classe_id"].apply(merge_class_id)
+
     gold_raw = pd.read_csv(GOLD, dtype={"gold": str})
     n_indef = int((gold_raw["gold"] == "indefinido").sum())
     gold_ok = gold_raw[gold_raw["gold"] != "indefinido"].copy()
     gold_ok["gold"] = gold_ok["gold"].astype(int)
+    if MERGED:
+        gold_ok["gold"] = gold_ok["gold"].map(MERGE_MAP)
     gold_ids = set(gold_ok["id"])
     gold_df = gold_ok.merge(df, on="id")
 
     weak = df[df["topic_raw"] != -1].copy()  # exclui outliers do BERTopic
     pool = weak[~weak["id"].isin(gold_ids)].copy()
-    # Rótulo fraco = classe consolidada (0-29), no MESMO espaço do gold humano.
+    # Rótulo fraco = classe consolidada (0-29) ou fundida (0-11), no MESMO espaço
+    # do gold humano.
     pool = pool.rename(columns={"classe_id": "y"})
     print(f"[clf] pool de treino (rótulo fraco, fora do gold): {len(pool)} docs "
           f"| gold humano: {len(gold_df)} (+{n_indef} 'indefinido' excluídos)")
     return pool, gold_df, gold_ids, n_indef
+
+
+def materialize_merged() -> None:
+    """Materializa o remapeamento 30->12 como artefatos inspecionáveis, SEM
+    destruir os originais (a fonte de verdade é o MERGE_MAP em text_utils):
+
+    - doc_topics.parquet: acrescenta as colunas `classe_id_merged` (0-11) e
+      `classe_tematica_merged` (nome), preservando `classe_id`/`classe_tematica`.
+    - reports/gold_labels_merged.csv: gold humano remapeado (id, gold 0-11),
+      mantendo reports/gold_labels.csv (0-29) intacto.
+    """
+    dt = pd.read_parquet(PROC / "doc_topics.parquet")
+    dt["classe_id_merged"] = dt["classe_id"].apply(merge_class_id)
+    dt["classe_tematica_merged"] = dt["classe_id_merged"].apply(
+        lambda c: TAXONOMY_MERGED[c] if c != -1 else "outlier")
+    dt.to_parquet(PROC / "doc_topics.parquet", index=False)
+    print(f"[clf] doc_topics.parquet += classe_id_merged/classe_tematica_merged "
+          f"(30->12, {dt['classe_id_merged'].nunique()} classes)")
+
+    gold = pd.read_csv(GOLD, dtype={"gold": str})
+    gold["gold"] = gold["gold"].apply(
+        lambda v: v if v == "indefinido" else str(MERGE_MAP[int(v)]))
+    gold_merged = PROJECT_ROOT / "reports" / "gold_labels_merged.csv"
+    gold.to_csv(gold_merged, index=False)
+    sup = gold[gold["gold"] != "indefinido"]["gold"].astype(int).value_counts()
+    print(f"[clf] reports/gold_labels_merged.csv: {len(gold)} linhas, "
+          f"suporte por classe {dict(sorted(sup.items()))}")
 
 
 def make_splits(pool: pd.DataFrame):
@@ -410,9 +459,10 @@ def plot_overfit(h_no: dict, h_do: dict) -> None:
                  fontsize=13)
     plt.tight_layout()
     FIG.mkdir(parents=True, exist_ok=True)
-    plt.savefig(FIG / "14_overfit_mlp.png")
+    out = fig_path("14_overfit_mlp")
+    plt.savefig(out)
     plt.close()
-    print(f"[clf]   curvas de overfit -> {FIG / '14_overfit_mlp.png'}")
+    print(f"[clf]   curvas de overfit -> {out}")
 
 
 def plot_regularization(curves: dict) -> None:
@@ -427,9 +477,10 @@ def plot_regularization(curves: dict) -> None:
     ax.legend()
     plt.tight_layout()
     FIG.mkdir(parents=True, exist_ok=True)
-    plt.savefig(FIG / "14b_regularizacao.png")
+    out = fig_path("14b_regularizacao")
+    plt.savefig(out)
     plt.close()
-    print(f"[clf]   curvas de regularização -> {FIG / '14b_regularizacao.png'}")
+    print(f"[clf]   curvas de regularização -> {out}")
 
 
 # --------------------------------------------------------------------------- #
@@ -510,9 +561,10 @@ def plot_confusions(gold_y, preds: dict) -> None:
                         color="white" if cm[i, j] > thr else "black")
     plt.tight_layout()
     FIG.mkdir(parents=True, exist_ok=True)
-    plt.savefig(FIG / "15_confusion_gold.png")
+    out = fig_path("15_confusion_gold")
+    plt.savefig(out)
     plt.close()
-    print(f"[clf] matrizes de confusão -> {FIG / '15_confusion_gold.png'}")
+    print(f"[clf] matrizes de confusão -> {out}")
 
 
 # --------------------------------------------------------------------------- #
@@ -527,15 +579,29 @@ def main() -> None:
                     help="Docs por classe no gold_template (~8-10).")
     ap.add_argument("--template-only", action="store_true",
                     help="Só gera o gold_template e para (não roda classificação).")
+    ap.add_argument("--merged", action="store_true",
+                    help="Usa o esquema FUNDIDO de 12 classes (MERGE_MAP 30->12) "
+                         "em vez das 30 classes consolidadas.")
     args = ap.parse_args()
 
     set_seeds()
-    write_gold_template(recent_months=args.recent_months,
-                        n_per_class=args.per_class)
-    if args.template_only:
-        print("[clf] --template-only: parando após o template (gold a rotular "
-              "à mão; classificação NÃO executada).")
-        return
+    if args.merged:
+        global MERGED, TAXONOMY, N_CLASSES, CLASS_NAMES
+        MERGED = True
+        TAXONOMY = TAXONOMY_MERGED
+        N_CLASSES = len(TAXONOMY_MERGED)
+        CLASS_NAMES = [TAXONOMY_MERGED[i] for i in range(N_CLASSES)]
+        print(f"[clf] === ESQUEMA FUNDIDO: {N_CLASSES} classes (MERGE_MAP 30->12) ===")
+        materialize_merged()
+        # No esquema fundido NÃO regeneramos o gold_template (ele pertence ao
+        # protocolo de anotação das 30 classes, já concluído).
+    else:
+        write_gold_template(recent_months=args.recent_months,
+                            n_per_class=args.per_class)
+        if args.template_only:
+            print("[clf] --template-only: parando após o template (gold a rotular "
+                  "à mão; classificação NÃO executada).")
+            return
     pool, gold_df, gold_ids, n_indef = load_data()
     tr, va, te = make_splits(pool)
 
@@ -558,9 +624,10 @@ def main() -> None:
         "gold_true": gold_df["gold"].astype(int).tolist(),
         "preds": {name: [int(p) for p in pr] for name, pr in preds.items()},
     }
-    with (PROC / "classify_gold_preds.json").open("w", encoding="utf-8") as fh:
+    preds_out = proc_path("classify_gold_preds")
+    with preds_out.open("w", encoding="utf-8") as fh:
         json.dump(gold_pred_dump, fh, ensure_ascii=False, indent=2)
-    print(f"[clf] predições do gold -> {PROC / 'classify_gold_preds.json'}")
+    print(f"[clf] predições do gold -> {preds_out}")
 
     # Tabela-resumo
     print("\n[clf] ===== COMPARAÇÃO DOS MODELOS =====")
@@ -582,20 +649,24 @@ def main() -> None:
             "split": {"treino": int(len(tr)), "val": int(len(va)),
                       "teste": int(len(te))},
             "seed": SEED,
-            "leakage_note": "gold removido do treino; rótulo fraco = classe_id consolidado (0-29)",
-            "weak_label": "classe_id (taxonomia consolidada 30 classes)",
+            "scheme": "merged_12" if MERGED else "full_30",
+            "leakage_note": "gold removido do treino; rótulo fraco = classe consolidada",
+            "weak_label": ("classe_id_merged (12 classes)" if MERGED
+                           else "classe_id (taxonomia consolidada 30 classes)"),
         },
         "models": {k: {kk: vv for kk, vv in v.items() if not kk.startswith("_")}
                    for k, v in results.items()},
         "class_names": {i: TAXONOMY[i] for i in range(N_CLASSES)},
     }
     PROC.mkdir(parents=True, exist_ok=True)
-    with (PROC / "classify_metrics.json").open("w", encoding="utf-8") as fh:
+    metrics_out = proc_path("classify_metrics")
+    with metrics_out.open("w", encoding="utf-8") as fh:
         json.dump(metrics, fh, ensure_ascii=False, indent=2)
-    print(f"\n[clf] métricas -> {PROC / 'classify_metrics.json'}")
-    print("[clf] LEMBRETE: reports/gold_template.csv tem a coluna 'classe' VAZIA "
-          "— deve ser rotulada à mão. A avaliação aqui usa o gold humano já "
-          "existente em reports/gold_labels.csv.")
+    print(f"\n[clf] métricas -> {metrics_out}")
+    if not MERGED:
+        print("[clf] LEMBRETE: reports/gold_template.csv tem a coluna 'classe' VAZIA "
+              "— deve ser rotulada à mão. A avaliação aqui usa o gold humano já "
+              "existente em reports/gold_labels.csv.")
 
 
 if __name__ == "__main__":
