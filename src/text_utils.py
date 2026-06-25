@@ -109,6 +109,54 @@ def merge_class_id(classe_id: int) -> int:
         return -1
     return MERGE_MAP[int(classe_id)]
 
+
+# --------------------------------------------------------------------------- #
+# Fusão para 10 classes (decisão do dono, 25/06/2026).
+#
+# É o esquema de 12 classes + DUAS fusões, escolhidas por dados (análise pós-hoc
+# da matriz de confusão das 12 classes vs gold, 3 modelos):
+#   12cls 0 Gestão  + 1 Corregedoria  -> "Gestão, governança e corregedoria"
+#       (2ª maior confusão, 34x; tematicamente coeso = administração interna do
+#        Judiciário. Preferido a Gestão+DH, que daria balde incoerente de n=97.)
+#   12cls 5 Acesso  + 11 Justiça Eleitoral -> "Acesso à justiça, cidadania e
+#        Justiça Eleitoral" (Eleitoral é a classe mais fraca: n=8, F1 0.36; cabe
+#        em cidadania/participação democrática.)
+# Ganho estimado (pós-hoc, sem retreino): F1-macro do MLP ~0.71.
+#
+# Definido direto em espaço 30->10 (e renumerado 0-9) para ficar inspecionável.
+# --------------------------------------------------------------------------- #
+TAXONOMY_10 = {
+    0: "Gestão, governança e corregedoria",
+    1: "Tecnologia, inovação e Justiça 4.0",
+    2: "Direitos humanos, igualdade e diversidade",
+    3: "Violência doméstica e proteção à mulher",
+    4: "Acesso à justiça, cidadania e Justiça Eleitoral",
+    5: "Questões fundiárias",
+    6: "Infância, juventude e socioeducativo",
+    7: "Sistema prisional",
+    8: "Judicialização, execução fiscal e precatórios",
+    9: "Sustentabilidade / Pauta verde",
+}
+
+# Classe fundida (0-9) -> classes consolidadas (0-29) que a compõem.
+MERGE_GROUPS_10 = {
+    0: [10, 12, 5, 0, 22],     # (12cls 0 Gestão) + (12cls 1 Corregedoria/cartórios)
+    1: [4, 16, 18],            # Tecnologia / Justiça 4.0
+    2: [1, 8, 9, 13, 26, 15],  # Direitos humanos, igualdade e diversidade
+    3: [2],                    # Violência doméstica (isolada)
+    4: [6, 25, 20, 3, 19],     # (12cls 5 Acesso) + (12cls 11 Justiça Eleitoral)
+    5: [17, 29],               # Questões fundiárias
+    6: [28, 7],                # Infância e juventude + Socioeducativo
+    7: [14],                   # Sistema prisional (isolado)
+    8: [21, 24, 11, 27],       # Judicialização + Exec. fiscal + Precatórios + Litig.
+    9: [23],                   # Sustentabilidade (isolada)
+}
+MERGE_MAP_10 = {old: new for new, olds in MERGE_GROUPS_10.items() for old in olds}
+assert sorted(MERGE_MAP_10) == list(range(len(TAXONOMY))), (
+    "MERGE_MAP_10 deve cobrir as 30 classes da TAXONOMY exatamente uma vez")
+# Consistência: o esquema de 10 deve ser um agrupamento (coarsening) do de 12.
+assert all(len({MERGE_MAP[o] for o in olds}) >= 1 for olds in MERGE_GROUPS_10.values())
+
 # Mapa de consolidação (decisão do dono): tópico bruto do BERTopic -> classe
 # consolidada. É a FONTE DE VERDADE para rotular cada tópico por classe; NÃO se
 # assume que a numeração do BERTopic (por tamanho) case com a taxonomia.

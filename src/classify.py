@@ -41,7 +41,9 @@ Artefatos:
 - reports/figures/15_confusion_gold.png
 
 Uso:
-    python src/classify.py
+    python src/classify.py                      # 30 classes consolidadas
+    python src/classify.py --scheme 12          # fusão p/ 12 classes
+    python src/classify.py --scheme 10          # fusão p/ 10 classes
     python src/classify.py --epochs 60 --skip-bert
 """
 
@@ -63,8 +65,9 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from text_utils import (  # noqa: E402
-    MIN_CLASS_DOCS_RECENT, MERGE_MAP, OUTROS_LABEL, TAXONOMY, TAXONOMY_MERGED,
-    get_stopwords, merge_class_id, small_classes_for_window)
+    MIN_CLASS_DOCS_RECENT, MERGE_MAP, MERGE_MAP_10, OUTROS_LABEL,
+    TAXONOMY as TAXONOMY_FULL, TAXONOMY_MERGED, TAXONOMY_10,
+    get_stopwords, small_classes_for_window)
 
 INTERIM = PROJECT_ROOT / "data" / "interim" / "noticias_limpo.parquet"
 PROC = PROJECT_ROOT / "data" / "processed"
@@ -74,23 +77,53 @@ GOLD_TEMPLATE = PROJECT_ROOT / "reports" / "gold_template.csv"
 
 SEED = 42
 MAX_FEATURES = 5000
+
+# --------------------------------------------------------------------------- #
+# Esquema de classes (--scheme): 'full' = 30 consolidadas (default), '12' e '10'
+# são fusões opt-in (MERGE_MAP / MERGE_MAP_10). apply_scheme() reatribui os
+# globais abaixo e liga o remapeamento do rótulo fraco/gold. As 30 classes ficam
+# intactas (drift/topics/ner dependem delas).
+# --------------------------------------------------------------------------- #
+_SCHEMES = {
+    "full": (TAXONOMY_FULL, None, ""),
+    "12":   (TAXONOMY_MERGED, MERGE_MAP, "_merged"),
+    "10":   (TAXONOMY_10, MERGE_MAP_10, "_merged10"),
+}
+SCHEME = "full"
+TAXONOMY = TAXONOMY_FULL
 N_CLASSES = len(TAXONOMY)
 CLASS_NAMES = [TAXONOMY[i] for i in range(N_CLASSES)]
+ACTIVE_MERGE_MAP: dict | None = None   # None = sem fusão (30 classes)
+SUFFIX = ""                            # sufixo de artefatos por esquema
 
-# Esquema fundido (12 classes) é opt-in: --merged reatribui os globais acima e
-# liga o remapeamento do rótulo fraco/gold via MERGE_MAP. Default = 30 classes.
-MERGED = False
+
+def apply_scheme(scheme: str) -> None:
+    """Reconfigura os globais de rótulo (TAXONOMY, N_CLASSES, mapa de fusão,
+    sufixo de artefatos) conforme o esquema escolhido."""
+    global SCHEME, TAXONOMY, N_CLASSES, CLASS_NAMES, ACTIVE_MERGE_MAP, SUFFIX
+    if scheme not in _SCHEMES:
+        raise ValueError(f"esquema desconhecido: {scheme}")
+    SCHEME = scheme
+    TAXONOMY, ACTIVE_MERGE_MAP, SUFFIX = _SCHEMES[scheme]
+    N_CLASSES = len(TAXONOMY)
+    CLASS_NAMES = [TAXONOMY[i] for i in range(N_CLASSES)]
+
+
+def remap_label(classe_id: int) -> int:
+    """Aplica a fusão ativa a uma classe consolidada (0-29). Preserva -1."""
+    if ACTIVE_MERGE_MAP is None or classe_id == -1:
+        return classe_id
+    return ACTIVE_MERGE_MAP[int(classe_id)]
 
 
 def fig_path(stem: str) -> Path:
-    """Caminho de figura com sufixo '_merged' quando no esquema fundido, para
-    não sobrescrever as figuras das 30 classes."""
-    return FIG / f"{stem}{'_merged' if MERGED else ''}.png"
+    """Caminho de figura com sufixo do esquema (não sobrescreve outros esquemas)."""
+    return FIG / f"{stem}{SUFFIX}.png"
 
 
 def proc_path(stem: str) -> Path:
     """Idem para artefatos JSON em data/processed."""
-    return PROC / f"{stem}{'_merged' if MERGED else ''}.json"
+    return PROC / f"{stem}{SUFFIX}.json"
 
 
 def set_seeds() -> None:
@@ -123,16 +156,16 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame, set[int], int]:
     df["text_bert"] = (df["titulo"].fillna("") + ". "
                        + df["corpo_texto"].fillna(""))
 
-    # Esquema fundido: rótulo fraco e gold passam de 30 -> 12 classes (MERGE_MAP).
-    if MERGED:
-        df["classe_id"] = df["classe_id"].apply(merge_class_id)
+    # Esquema fundido: rótulo fraco e gold passam de 30 -> 12 ou 10 classes.
+    if ACTIVE_MERGE_MAP is not None:
+        df["classe_id"] = df["classe_id"].apply(remap_label)
 
     gold_raw = pd.read_csv(GOLD, dtype={"gold": str})
     n_indef = int((gold_raw["gold"] == "indefinido").sum())
     gold_ok = gold_raw[gold_raw["gold"] != "indefinido"].copy()
     gold_ok["gold"] = gold_ok["gold"].astype(int)
-    if MERGED:
-        gold_ok["gold"] = gold_ok["gold"].map(MERGE_MAP)
+    if ACTIVE_MERGE_MAP is not None:
+        gold_ok["gold"] = gold_ok["gold"].map(ACTIVE_MERGE_MAP)
     gold_ids = set(gold_ok["id"])
     gold_df = gold_ok.merge(df, on="id")
 
@@ -147,29 +180,32 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame, set[int], int]:
 
 
 def materialize_merged() -> None:
-    """Materializa o remapeamento 30->12 como artefatos inspecionáveis, SEM
-    destruir os originais (a fonte de verdade é o MERGE_MAP em text_utils):
+    """Materializa o remapeamento do esquema ATIVO (12 ou 10 classes) como
+    artefatos inspecionáveis, SEM destruir os originais (a fonte de verdade são
+    os MERGE_MAP em text_utils). O sufixo segue o esquema (_merged / _merged10):
 
-    - doc_topics.parquet: acrescenta as colunas `classe_id_merged` (0-11) e
-      `classe_tematica_merged` (nome), preservando `classe_id`/`classe_tematica`.
-    - reports/gold_labels_merged.csv: gold humano remapeado (id, gold 0-11),
-      mantendo reports/gold_labels.csv (0-29) intacto.
+    - doc_topics.parquet: acrescenta `classe_id{SUFFIX}` e `classe_tematica{SUFFIX}`,
+      preservando `classe_id`/`classe_tematica` (30 classes).
+    - reports/gold_labels{SUFFIX}.csv: gold humano remapeado, mantendo
+      reports/gold_labels.csv (0-29) intacto.
     """
+    col_id = f"classe_id{SUFFIX}"
+    col_nome = f"classe_tematica{SUFFIX}"
     dt = pd.read_parquet(PROC / "doc_topics.parquet")
-    dt["classe_id_merged"] = dt["classe_id"].apply(merge_class_id)
-    dt["classe_tematica_merged"] = dt["classe_id_merged"].apply(
-        lambda c: TAXONOMY_MERGED[c] if c != -1 else "outlier")
+    dt[col_id] = dt["classe_id"].apply(remap_label)
+    dt[col_nome] = dt[col_id].apply(
+        lambda c: TAXONOMY[c] if c != -1 else "outlier")
     dt.to_parquet(PROC / "doc_topics.parquet", index=False)
-    print(f"[clf] doc_topics.parquet += classe_id_merged/classe_tematica_merged "
-          f"(30->12, {dt['classe_id_merged'].nunique()} classes)")
+    print(f"[clf] doc_topics.parquet += {col_id}/{col_nome} "
+          f"(30->{N_CLASSES}, {dt[col_id].nunique()} classes)")
 
     gold = pd.read_csv(GOLD, dtype={"gold": str})
     gold["gold"] = gold["gold"].apply(
-        lambda v: v if v == "indefinido" else str(MERGE_MAP[int(v)]))
-    gold_merged = PROJECT_ROOT / "reports" / "gold_labels_merged.csv"
-    gold.to_csv(gold_merged, index=False)
+        lambda v: v if v == "indefinido" else str(ACTIVE_MERGE_MAP[int(v)]))
+    gold_out = PROJECT_ROOT / "reports" / f"gold_labels{SUFFIX}.csv"
+    gold.to_csv(gold_out, index=False)
     sup = gold[gold["gold"] != "indefinido"]["gold"].astype(int).value_counts()
-    print(f"[clf] reports/gold_labels_merged.csv: {len(gold)} linhas, "
+    print(f"[clf] {gold_out.name}: {len(gold)} linhas, "
           f"suporte por classe {dict(sorted(sup.items()))}")
 
 
@@ -579,21 +615,20 @@ def main() -> None:
                     help="Docs por classe no gold_template (~8-10).")
     ap.add_argument("--template-only", action="store_true",
                     help="Só gera o gold_template e para (não roda classificação).")
+    ap.add_argument("--scheme", choices=["full", "12", "10"], default="full",
+                    help="Esquema de classes: full=30 consolidadas (default), "
+                         "12=fusão (MERGE_MAP), 10=fusão (MERGE_MAP_10).")
     ap.add_argument("--merged", action="store_true",
-                    help="Usa o esquema FUNDIDO de 12 classes (MERGE_MAP 30->12) "
-                         "em vez das 30 classes consolidadas.")
+                    help="(alias retrocompatível de --scheme 12).")
     args = ap.parse_args()
 
     set_seeds()
-    if args.merged:
-        global MERGED, TAXONOMY, N_CLASSES, CLASS_NAMES
-        MERGED = True
-        TAXONOMY = TAXONOMY_MERGED
-        N_CLASSES = len(TAXONOMY_MERGED)
-        CLASS_NAMES = [TAXONOMY_MERGED[i] for i in range(N_CLASSES)]
-        print(f"[clf] === ESQUEMA FUNDIDO: {N_CLASSES} classes (MERGE_MAP 30->12) ===")
+    scheme = "12" if args.merged else args.scheme
+    apply_scheme(scheme)
+    if scheme != "full":
+        print(f"[clf] === ESQUEMA FUNDIDO: {N_CLASSES} classes (30->{N_CLASSES}) ===")
         materialize_merged()
-        # No esquema fundido NÃO regeneramos o gold_template (ele pertence ao
+        # Nos esquemas fundidos NÃO regeneramos o gold_template (ele pertence ao
         # protocolo de anotação das 30 classes, já concluído).
     else:
         write_gold_template(recent_months=args.recent_months,
@@ -649,9 +684,9 @@ def main() -> None:
             "split": {"treino": int(len(tr)), "val": int(len(va)),
                       "teste": int(len(te))},
             "seed": SEED,
-            "scheme": "merged_12" if MERGED else "full_30",
+            "scheme": f"{N_CLASSES}_classes ({SCHEME})",
             "leakage_note": "gold removido do treino; rótulo fraco = classe consolidada",
-            "weak_label": ("classe_id_merged (12 classes)" if MERGED
+            "weak_label": (f"classe_id{SUFFIX} ({N_CLASSES} classes)" if SCHEME != "full"
                            else "classe_id (taxonomia consolidada 30 classes)"),
         },
         "models": {k: {kk: vv for kk, vv in v.items() if not kk.startswith("_")}
@@ -663,7 +698,7 @@ def main() -> None:
     with metrics_out.open("w", encoding="utf-8") as fh:
         json.dump(metrics, fh, ensure_ascii=False, indent=2)
     print(f"\n[clf] métricas -> {metrics_out}")
-    if not MERGED:
+    if SCHEME == "full":
         print("[clf] LEMBRETE: reports/gold_template.csv tem a coluna 'classe' VAZIA "
               "— deve ser rotulada à mão. A avaliação aqui usa o gold humano já "
               "existente em reports/gold_labels.csv.")
