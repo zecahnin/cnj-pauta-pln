@@ -28,41 +28,56 @@
 | Parâmetro | Valor |
 |---|---|
 | Data de execução | 2026-06-21 |
-| Janela temporal | `after=2025-12-21` → `before=2026-06-21` (6 meses) |
+| Janela temporal | `after=2024-06-21` → `before=2026-06-21` (**~24 meses**) |
 | `per_page` | 100 (máximo da API) |
-| Paginação | 10 páginas |
+| Paginação | 45 páginas |
 | Ordenação | `date desc` |
 
 ## Resultado **real** (executado)
 
-- **983 notícias** coletadas (`X-WP-Total` da janela = 983; baixadas = 983).
-- **983 ids únicos**, **983 urls únicas** → sem duplicatas.
-- **0 registros com `corpo_texto` vazio.**
-- Tamanho do corpo (caracteres): mín. 224 | mediana 3.116 | máx. 10.619.
-- Intervalo real de publicação: `2025-12-22T08:00:13` → `2026-06-19T13:02:35`.
-- Arquivo: `data/raw/noticias.jsonl` (~8,9 MB).
-- **288 categorias** mapeadas (id → nome) a partir do endpoint de categorias.
+- **4.410 notícias** coletadas na janela de 24 meses (`X-WP-Total` da janela =
+  baixadas).
+- **4.410 ids únicos**, **4.410 urls únicas** → sem duplicatas na coleta.
+- **1 registro com `corpo_texto` vazio** (removido na Fase 2).
+- Tamanho do corpo bruto (caracteres): mín. 0 (o registro vazio) | mediana 3.129
+  | máx. 14.964.
+- Intervalo real de publicação: `2024-06-21T08:00:36` → `2026-06-19T12:12:21`.
+- Arquivo: `data/raw/noticias.jsonl` (~44 MB).
+- Categorias-fonte mapeadas (id → nome) a partir do endpoint de categorias.
 
-### Distribuição por mês
+> Após a limpeza da Fase 2 (idioma, corpos curtos, dedup MinHash), o corpus cai
+> de **4.410 → 4.394 notícias** (16 removidas). Os números das fases seguintes
+> usam as **4.394**.
 
-| Mês | Notícias |
-|---|---|
-| 2025-12 | 15 (janela começa em 21/12) |
-| 2026-01 | 151 |
-| 2026-02 | 136 |
-| 2026-03 | 198 |
-| 2026-04 | 183 |
-| 2026-05 | 176 |
-| 2026-06 | 124 (até 19/06) |
+### Distribuição por mês (coleta bruta, 4.410)
 
-### Distribuição por categoria-fonte (top)
+| Mês | N | | Mês | N |
+|---|---|---|---|---|
+| 2024-06 | 46 (janela começa em 21/06) | | 2025-07 | 151 |
+| 2024-07 | 175 | | 2025-08 | 221 |
+| 2024-08 | 207 | | 2025-09 | 199 |
+| 2024-09 | 210 | | 2025-10 | 212 |
+| 2024-10 | 213 | | 2025-11 | 209 |
+| 2024-11 | 198 | | 2025-12 | 136 |
+| 2024-12 | 178 | | 2026-01 | 151 |
+| 2025-01 | 110 | | 2026-02 | 136 |
+| 2025-02 | 193 | | 2026-03 | 198 |
+| 2025-03 | 178 | | 2026-04 | 183 |
+| 2025-04 | 180 | | 2026-05 | 176 |
+| 2025-05 | 221 | | 2026-06 | 124 (até 19/06) |
+| 2025-06 | 205 | | **Total** | **4.410** |
+
+> Os meses extremos (junho/2024 e junho/2026) estão **parciais** — a janela
+> começa em 21/06/2024 e termina em 19/06/2026.
+
+### Distribuição por categoria-fonte (corpus bruto)
 
 | Categoria | Notícias |
 |---|---|
-| Agência CNJ de Notícias | 977 |
-| Notícias CNJ | 615 |
-| Notícias do Judiciário | 344 |
-| Sem categoria (rótulo "Sem categoria") | 17 |
+| Agência CNJ de Notícias | 4.377 |
+| Notícias CNJ | 2.413 |
+| Notícias do Judiciário | 1.950 |
+| Sem categoria | 60 |
 | Corte Interamericana de Direitos Humanos (CIDH) | 1 |
 
 > **Observação metodológica:** as categorias-fonte são *grossas* — quase todo o
@@ -70,7 +85,7 @@
 > "Notícias do Judiciário"). Isso **justifica a modelagem de tópicos não
 > supervisionada**: a taxonomia editorial existente não revela a pauta fina nem
 > sua deriva temporal. (Uma notícia pode ter mais de uma categoria, por isso a
-> soma excede 983.)
+> soma excede 4.410.)
 
 ## Schema do registro (`data/raw/noticias.jsonl`)
 
@@ -95,11 +110,11 @@ Uma linha JSON por notícia, com os campos:
 ## Reprodutibilidade
 
 ```bash
-python src/collect.py --after 2025-12-21 --before 2026-06-21
+python src/collect.py --after 2024-06-21 --before 2026-06-21
 # ou janela relativa:
-python src/collect.py --months 6
+python src/collect.py --months 24
 # sondagem sem download:
-python src/collect.py --dry-run --after 2025-12-21 --before 2026-06-21
+python src/collect.py --dry-run --after 2024-06-21 --before 2026-06-21
 ```
 
 A coleta é **idempotente**: reexecuções carregam os ids/urls já presentes em
@@ -111,5 +126,6 @@ versionado no git para garantir reprodutibilidade das fases seguintes.
 
 - A WP REST API retorna apenas o `id` do autor por padrão; a autoria individual
   não é recuperável sem `_embed` por post (não institucionalmente relevante).
-- A janela de 6 meses começa em 21/12, então dezembro/2025 está parcial.
+- A janela de 24 meses começa em 21/06/2024 e termina em 19/06/2026, então os
+  meses extremos estão parciais.
 - Conteúdos podem ter sido editados após a publicação (`modified` registrado).

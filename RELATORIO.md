@@ -1,220 +1,254 @@
 # Relatório Completo — Deriva de Pauta nas Notícias do CNJ
 
-> **Projeto:** PLN acadêmico — Modalidade 2 "PLN no Setor Público"  
-> **Repositório:** [github.com/zecahnin/cnj-pauta-pln](https://github.com/zecahnin/cnj-pauta-pln)  
-> **Execução:** Claude Code (Anthropic Claude Opus 4.8) via Hermes Agent  
-> **Data:** 2026-06-21  
-> **Período analisado:** 22/12/2025 a 19/06/2026  
-> **Corpus:** 979 notícias · **10 classes temáticas**
+> **Projeto:** PLN acadêmico — Modalidade 2 "PLN no Setor Público"
+> **Repositório:** [github.com/zecahnin/cnj-pauta-pln](https://github.com/zecahnin/cnj-pauta-pln)
+> **Execução:** Claude Code (Anthropic Claude Opus 4.8) via Hermes Agent
+> **Data de fechamento:** 2026-06-26
+> **Período analisado:** 21/06/2024 a 19/06/2026 (**~24 meses**)
+> **Corpus:** **4.394 notícias** limpas · taxonomia consolidada de **30 classes**
+> (com fusões opt-in para **12** e **10** classes)
+
+> **Fonte única dos números.** Todas as métricas e hiperparâmetros deste relatório
+> vêm de execuções reais (seed=42) e estão consolidados em
+> **`reports/RESUMO_FINAL.md`**. Em caso de divergência, vale o RESUMO_FINAL.
 
 ---
 
 ## 1. Visão Geral
 
-A Agência CNJ de Notícias (comunicação institucional do Conselho Nacional de Justiça) publica ~160 notícias/mês, mas sua taxonomia editorial é **cega à pauta** — 973/979 notícias caem em "Agência CNJ de Notícias". O projeto usa PLN para **descobrir a pauta fina** (BERTopic não-supervisionado) e **classificar supervisionadamente** cada notícia (Naive Bayes, MLP Keras, BERTimbau), cobrindo as técnicas do curso.
+A Agência CNJ de Notícias (comunicação institucional do Conselho Nacional de
+Justiça) publica ~180 notícias/mês, mas sua taxonomia editorial é **cega à
+pauta** — quase todo o acervo cai em 2–3 rótulos genéricos ("Agência CNJ de
+Notícias", "Notícias CNJ", "Notícias do Judiciário"). O projeto usa PLN para
+**descobrir a pauta fina** (BERTopic não-supervisionado, 46 tópicos → 30 classes)
+e **classificar supervisionadamente** cada notícia (Naive Bayes, MLP Keras,
+BERTimbau), medindo a concordância contra um **gold set humano de 300 notícias**.
 
 **Narrativa:** Descoberta → Classificação → NER → Deriva temporal
 
+**Resultado principal:** MLP Keras, esquema de **10 classes** —
+**F1-macro 0,705 / acurácia 0,670 / kappa 0,615** contra o gold humano
+(concordância substancial), operando perto do **teto humano da tarefa (~0,81)**.
+
 ---
 
-## 2. Pipeline Completo (8 fases)
+## 2. Pipeline Completo
 
-### FASE 1 — Coleta (✅ 983 notícias)
+```
+ coleta → limpeza →  EDA  → embeddings → BERTopic → consolidação → deriva → classificação → NER
+(baixar)(faxinar)(explorar)(virar nº)  (46 temas)  (46→30 classes)(no tempo)(3 modelos×3 esq.)(entidades)
+ Fase 1  Fase 2   Fase 3    Fase 4a     Fase 4b       Fase 4c       Fase 5      Fase 6        Fase 6b
+```
+
+### FASE 1 — Coleta (✅ 4.410 notícias brutas)
 
 | Item | Resultado |
 |------|-----------|
 | API | WP REST API v2 — `https://www.cnj.jus.br/wp-json/wp/v2/posts` |
-| Status | HTTP 200, 44.465 posts totais |
-| Período | `after=2025-12-21` → `before=2026-06-21` |
-| **Total coletado** | **983** (0 duplicatas) |
-| Rate limit | ≥1,2s entre requisições |
-| Backoff | Exponencial (2,4,8,16,32s) em 429/5xx |
-| robots.txt | `/wp-json/` não bloqueado |
+| Período | `after=2024-06-21` → `before=2026-06-21` (~24 meses) |
+| **Total coletado** | **4.410** (0 duplicatas; 4.410 ids/urls únicos) |
+| Rate limit | ≥1,2 s entre requisições |
+| Backoff | Exponencial (2,4,8,16,32 s) em 429/5xx |
+| robots.txt | `/wp-json/` não bloqueado (validado por `can_fetch`) |
 | User-Agent | `cnj-pauta-pln/1.0 (pesquisa academica de PLN)` |
-| Categorias mapeadas | 288 (id→nome) |
+| Intervalo real | 21/06/2024 08:00 → 19/06/2026 12:12 |
 
-**Distribuição por mês:**
+Detalhes, distribuição mensal e schema do registro: **`docs/coleta.md`**.
 
-| Mês | N |
-|-----|---|
-| 2025-12 | 15 (parcial) |
-| 2026-01 | 151 |
-| 2026-02 | 136 |
-| 2026-03 | 198 |
-| 2026-04 | 183 |
-| 2026-05 | 176 |
-| 2026-06 | 124 (parcial) |
-
----
-
-### FASE 2 — Pré-processamento (✅ 979 notícias)
+### FASE 2 — Pré-processamento (✅ 4.394 notícias)
 
 | Operação | Resultado |
 |----------|-----------|
-| Limpeza HTML → texto | Boilerplate removido (créditos, "Leia mais") |
-| Corpos curtos | 1 removida (<250 chars) |
-| Filtro idioma | 1 em espanhol removida |
-| Dedup semântico (MinHash, Jaccard ≥0,85) | 2 quase-duplicatas |
-| **Total após limpeza** | **979** |
-| Mediana tokens/notícia | 449 |
+| Limpeza HTML → texto | Boilerplate/rodapé editorial removido |
+| Corpos curtos | `--min-chars 250` |
+| Filtro idioma | mantém só português |
+| Dedup semântico (MinHash, Jaccard ≥0,85) | quase-duplicatas removidas |
+| **Total após limpeza** | **4.394** (4.410 − 16) |
 
----
+Saída: `data/interim/noticias_limpo.parquet`.
 
 ### FASE 3 — EDA ✅ (notebook `01_eda.ipynb`)
 
-**6 figuras:** volume por mês, por categoria, distribuição comprimento, top termos, wordcloud, volume semanal.
-
----
+**6 figuras (01–06):** volume por mês, por categoria-fonte, distribuição de
+comprimento, top termos, wordcloud, volume semanal.
 
 ### FASE 4 — Descoberta Exploratória: BERTopic ✅
 
-**Embeddings:** `paraphrase-multilingual-mpnet-base-v2` (768d)
+**Embeddings (4a):** `sentence-transformers/paraphrase-multilingual-mpnet-base-v2`
+(768d), entrada "título + corpo", vetores L2-normalizados, seed 42.
 
-**Sweep de hiperparâmetros:**
+**BERTopic (4b):**
+
+| Componente | Configuração |
+|---|---|
+| Redução | UMAP `n_neighbors=10, n_components=5, min_dist=0.0, metric=cosine, random_state=42` |
+| Clusterização | HDBSCAN `min_cluster_size=min_topic_size, metric=euclidean, cluster_selection_method=leaf` |
+| Representação | c-TF-IDF, `CountVectorizer(ngram_range=(1,2), min_df=3, stopwords pt)` |
+| Probabilidades | `calculate_probabilities=False` |
+
+**Sweep `min_topic_size ∈ {10, 15, 20}`** (escolha por coerência c_v + diversidade):
 
 | min_topic_size | N tópicos | c_v | Diversidade | Outliers |
 |:---:|:---:|:---:|:---:|:---:|
-| 10 | 23 | 0,6335 | 0,9217 | 39,22% |
-| 15 | 12 | 0,7192 | 0,95 | 31,15% |
-| **20 (selecionado)** | **10** | **0,777** | **1,0** | **29,42%** |
+| 10 | 94 | 0,629 | 0,866 | 44,1% |
+| 15 | 66 | 0,669 | 0,870 | 51,6% |
+| **20 (selecionado)** | **46** | **0,681** | **0,885** | **55,5%** |
 
-**10 classes temáticas (taxonomia canônica):**
+> `n_neighbors=10` (estrutura local) foi necessário para o HDBSCAN não colapsar
+> tudo em 1–2 clusters. O vencedor maximiza coerência e diversidade ao custo de
+> mais outliers — daí os **56% de outliers**, que dominam a discussão de limitações.
 
-| ID | Classe | N docs | Âncora |
-|:--:|--------|:------:|--------|
-| T0 | Justiça itinerante / cidadania | 179 | itinerante |
-| T1 | IA / Conecta / Justiça 4.0 | 152 | inteligência artificial |
-| T2 | Saúde / judicialização / SUS | 106 | saúde |
-| T3 | Direitos humanos / Corte IDH | 139 | humanos |
-| T4 | Violência doméstica / mulheres | 96 | violência |
-| T5 | Sistema prisional / Pena Justa | 89 | prisional |
-| T6 | Infância e juventude | 68 | crianças |
-| T7 | Sustentabilidade ambiental | 56 | sustentabilidade |
-| T8 | Processos disciplinares | 53 | disciplinar |
-| T9 | Precatórios / corregedoria | 41 | precatórios |
+**Consolidação (4c):** os 46 tópicos brutos são fragmentados; o mapa
+`reports/taxonomia_map.csv` (decisão do dono) os agrupa em **30 classes
+temáticas** nomeadas. `text_utils.topic_to_class_id` traduz `topic_raw → classe_id`
+(0–29) — é a fonte de verdade dos rótulos.
 
-> O BERTopic é **descoberta exploratória** — deriva a taxonomia que alimenta a classificação supervisionada. A avaliação formal é a Fase 6.
-
-**Resultado negativo:** colapso inicial em 2 tópicos (cosseno médio ≈0,69) → corrigido com `n_neighbors=10` + `cluster_selection_method="leaf"`. Bug de acentos do `language="english"` corrigido com `"multilingual"`.
-
----
+**Resultados negativos (corrigidos):** colapso inicial em 1–2 tópicos →
+`n_neighbors=10` + `leaf`. Bug de acentos do `language="english"` (removia
+não-ASCII) → `"multilingual"`.
 
 ### FASE 5 — Deriva Temporal ✅ (notebook `03_temporal_drift.ipynb`)
 
-**20 picos detectados** (z-score ≥1,5):
+- **Comando:** `python src/drift.py --freq W --z 1.5`
+- Matriz tópico×semana → z-score por tópico → marca picos acima do limiar,
+  anexando as manchetes reais como evidência.
+- **63 picos** detectados (`topic_peaks.csv`), casados com eventos de calendário
+  (infância em maio, Pauta Verde em junho, Mês da Mulher em março).
 
-| Data | Tópico | z | N | Contexto |
-|:----:|:------:|:-:|:-:|----------|
-| 18/05 | T6 Infância | **3,68** | 9 | Dia Nacional Combate Abuso Infantil + app A.DOT SNA |
-| 03/03 | T8 Disciplinar | **3,88** | 9 | Decisões alto perfil (afastamento TRT-8) |
-| 03/03 | T9 Precatórios | **3,17** | 5 | Comissão verbas indenizatórias |
-| 20/04 | T0 Itinerante | **3,18** | 16 | PopRuaJud + Justiça Itinerante Amazônia |
-| 26/01 | T7 Sustentabilidade | **3,01** | 8 | Selo Carbono Neutro, energia solar |
-| 09/03 | T4 Violência doméstica | **2,64** | 10 | Mês da Mulher / Dia Internacional |
+> Cruzamento pico↔evento é **correlação temporal**, não causal. Observâncias de
+> calendário são fonte externa verificável; eventos institucionais são inferidos
+> do corpus.
 
-**Deriva estrutural (H1 → H2):**
-- **📈 Justiça itinerante / PopRuaJud: +7,2 pp** — maior crescimento
-- **📈 IA / Justiça 4.0: +2,7 pp** — crescimento invisível na taxonomia
-- 📉 Violência doméstica: −3,9 pp (sazonal, Mês da Mulher)
-- 📉 Sustentabilidade: −3,5 pp (sazonal, Semana Pauta Verde)
-
-**12 eventos mapeados** em `reports/eventos_cnj.csv` — observâncias de calendário (8/3, 18/5, 5/6), programas do CNJ (PopRuaJud, Estratégia Cuidar, Pena Justa), eventos institucionais.
-
-> Cruzamento pico↔evento é **correlação temporal**, não causal. Observâncias de calendário são fonte externa verificável; eventos institucionais são inferidos do corpus.
-
----
-
-### FASE 6 — NÚCLEO: Classificação Supervisionada ✅ (notebook `04_supervised_classification.ipynb`)
+### FASE 6 — NÚCLEO: Classificação Supervisionada ✅
 
 #### Protocolo de avaliação (sem vazamento)
 
 | Item | Valor |
 |------|-------|
-| Pool de treino (rótulo fraco, sem gold) | **529** docs |
-| Split | 338 treino / 85 val / 106 teste |
-| Gold humano (excluído do treino) | **173** (+22 "indefinido") |
-| Gold ids que coincidiam com weak set | 162 → removidos do treino |
-| Features TF-IDF | `max_features=5000`, `ngram_range=(1,2)` |
+| **Rótulo fraco** | `classe_id` consolidado (remapeado p/ 12/10), no MESMO espaço do gold |
+| **Outliers (topic_raw=-1)** | excluídos do pool (56% do corpus) |
+| Pool de treino (rótulo fraco, fora do gold) | **1.821** docs |
+| Split estratificado | **1.164** treino / **292** val / **365** teste |
+| **Gold humano (régua externa)** | **300** docs (0 `indefinido`), removidos do treino |
 
-> **Correção de vazamento:** a validação antiga treinava com gold dentro do conjunto e reportava κ≈0,91. O protocolo novo (gold removido do treino) dá κ≈0,79 — números honestos e defensáveis.
+> **Correção de vazamento:** versões antigas treinavam *com* o gold dentro do
+> conjunto e reportavam kappa inflado (~0,9). O protocolo novo (gold fora do
+> treino) é a régua honesta — **é o número que vale**.
+>
+> **Bug corrigido:** o rótulo fraco usava `topic_raw` (id bruto 0–45, espaço
+> distinto do gold 0–29), o que estourava a MLP e invalidava a métrica externa.
+> Corrigido para `classe_id` consolidado.
 
-#### Modelo A — Naive Bayes (baseline clássico)
+#### Features
 
-`TfidfVectorizer` + `MultinomialNB`
+- **TF-IDF** (NB e MLP): `TfidfVectorizer(stop_words=pt, ngram_range=(1,2),
+  min_df=3, max_features=5000, sublinear_tf=True)`. Entrada = título + corpo
+  normalizado.
+- **BERTimbau** (Modelo C): `neuralmind/bert-base-portuguese-cased`,
+  **mean-pooling** da última camada, 768d, truncado em 512 subtokens. Entrada =
+  título + corpo original (cased preserva caixa/acentos).
 
-| Métrica | Interno (teste) | Externo (gold) |
-|---------|:---------------:|:--------------:|
-| Accuracy | 0,6038 | 0,5434 |
-| **F1-macro** | 0,4292 | **0,4958** |
-| **Kappa** | — | **0,4896** |
+#### Os três modelos
 
-**F1 por classe (gold):** Violência doméstica 0,81 | IA/Justiça 4.0 0,74 | Sustentabilidade 0,69 | Sistema prisional 0,77 | Precatórios **0,00** (classe pequena, NB não consegue)
+| Modelo | Arquitetura / hiperparâmetros |
+|---|---|
+| **A. Naive Bayes** | TF-IDF → `MultinomialNB()` (baseline probabilístico). |
+| **B. MLP Keras** | `Input(5000) → Dense(256,ReLU) → Dropout(0.3) → Dense(128,ReLU) → Dropout(0.3) → Dense(N,softmax)`; **Adam**; `sparse_categorical_crossentropy`; batch 32; até 50 épocas; **early stopping** (`val_loss`, paciência 5, `restore_best_weights`). |
+| **C. BERTimbau** | embeddings (mean-pooling) → `StandardScaler` → `LogisticRegression(C=1.0, max_iter=2000)`. |
 
-#### Modelo B — MLP Keras (rede neural densa, modelo principal de DL)
+`N` = nº de classes do esquema (30, 12 ou 10).
 
-```
-Sequential([
-    Input(shape=(5000,)),
-    Dense(256, activation="relu"),
-    Dropout(0.3),
-    Dense(128, activation="relu"),
-    Dropout(0.3),
-    Dense(10, activation="softmax"),
-])
-compile(optimizer="adam", loss="sparse_categorical_crossentropy")
-```
+#### Esquemas de classes (30 / 12 / 10)
 
-| Métrica | Interno (teste) | Externo (gold) |
-|---------|:---------------:|:--------------:|
-| Accuracy | 0,7736 | **0,8092** |
-| **F1-macro** | 0,6863 | **0,7980** |
-| **Kappa** | — | **0,7875** |
-| Early stopping | 16 épocas (patience=5) |
+A taxonomia consolidada tem **30 classes**, mas **4 sem nenhum gold** e várias com
+n<6 — o que torna o macro-F1 instável. Por isso duas fusões opt-in, escolhidas
+pela **matriz de confusão real vs. gold**:
 
-**F1 por classe (gold):** Sustentabilidade **0,94** | Infância **0,92** | Disciplinares 0,88 | IA/Justiça 4.0 0,83 | Violência 0,83 | Itinerante 0,77 | Precatórios 0,56
+- **30 → 12** (`MERGE_MAP`): funde fragmentos temáticos (ex.: Tecnologia =
+  IA+Inovação+Domicílio Eletrônico; Acesso = Itinerante+PopRua).
+- **12 → 10** (`MERGE_MAP_10`): mais duas fusões — Gestão+Corregedoria e
+  Acesso+Justiça Eleitoral (Eleitoral era a classe mais fraca, n=8, F1 0,36).
 
-#### Análise de Overfit (peça central do Módulo 2 do curso)
+> **Decisão registrada:** *não* fundir Gestão com Direitos Humanos, apesar de ser
+> o máximo da métrica (+0,034 isolado): criaria um balde incoerente de n=97 e
+> dissolveria um tema valioso. O ganho extra é quase todo artefato mecânico.
 
-Estudo controlado com 4 configurações, 50 épocas:
+#### Resultados reais — régua externa (vs. gold de 300) — **o número que vale**
 
-| Configuração | train_acc | val_acc_best | val_loss min | val_loss final | ∆ |
-|:------------:|:---------:|:------------:|:------------:|:--------------:|:-:|
-| **Sem regularização** | 1,0 | 0,7882 | 0,7081 | 0,7235 | +0,0155 |
-| Dropout 0.3 | 1,0 | 0,7765 | 0,7686 | **0,8256** | **+0,0570** |
-| **L2 1e-3** | 1,0 | 0,7765 | 0,8511 | 0,8579 | +0,0069 |
-| L2 1e-2 (forte) | 0,9941 | 0,7765 | 1,4867 | 1,4867 | 0,0 (underfit) |
+| Esquema | Modelo | Acurácia | **F1-macro** | Kappa |
+|:---:|---|:---:|:---:|:---:|
+| **30** | NB | 0,400 | 0,359 | 0,354 |
+|  | MLP | 0,503 | 0,492 | 0,480 |
+|  | BERTimbau | 0,473 | 0,469 | 0,451 |
+| **12** | NB | 0,533 | 0,472 | 0,475 |
+|  | MLP | 0,637 | 0,657 | 0,592 |
+|  | BERTimbau | 0,583 | 0,607 | 0,535 |
+| **10** | NB | 0,613 | 0,562 | 0,542 |
+|  | **MLP** | **0,670** | **0,705** | **0,615** |
+|  | BERTimbau | 0,627 | 0,650 | 0,566 |
 
-> 🧠 **Resultado negativo honesto:** Dropout **piora** a generalização em TF-IDF esparso com dataset pequeno (val_loss sobe +0,057). Quem controla o overfit é L2 moderado (1e-3). L2 forte causa underfit (val_loss flat em 1,49). Documentado nas figuras 14 e 14b como achado, não mascarado.
+#### Régua interna (teste do pool, aprende o rótulo fraco)
 
-#### Modelo C — BERTimbau (transformer do curso)
+| Esquema | NB (acc/F1) | MLP (acc/F1) | BERTimbau (acc/F1) |
+|:---:|:---:|:---:|:---:|
+| 30 | 0,614 / 0,445 | 0,778 / 0,770 | 0,797 / 0,792 |
+| 12 | 0,726 / 0,552 | 0,855 / 0,855 | 0,841 / 0,851 |
+| 10 | 0,726 / 0,594 | 0,822 / 0,823 | 0,800 / 0,822 |
 
-`neuralmind/bert-base-portuguese-cased` (mean-pooling) + `LogisticRegression`
+> **Leitura:** internamente os modelos aprendem bem o rótulo fraco (MLP/BERT
+> ~0,82–0,85); o gap interno×externo (~0,15–0,30) é o efeito do **ruído do rótulo
+> fraco + dos outliers**.
 
-| Métrica | Interno (teste) | Externo (gold) |
-|---------|:---------------:|:--------------:|
-| Accuracy | 0,7925 | **0,7919** |
-| **F1-macro** | 0,7092 | **0,787** |
-| **Kappa** | — | **0,7687** |
-
-**F1 por classe (gold):** Disciplinares **0,94** | Infância 0,87 | Sustentabilidade 0,87 | IA/Justiça 4.0 0,84 | Itinerante 0,76 | Precatórios 0,77
-
-#### Tabela Comparativa Final
+#### Tabela comparativa final (10 classes, gold)
 
 | Modelo | Acc gold | **F1 gold** | **Kappa** | Técnica do curso |
 |--------|:-------:|:----------:|:---------:|------------------|
-| **A: Naive Bayes** | 0,5434 | **0,4958** | 0,4896 | BoW/TF-IDF, Naive Bayes |
-| **B: MLP Keras** | **0,8092** | **0,7980** | **0,7875** | Redes densas, ReLU, softmax, Adam, Dropout/L2, overfit |
-| **C: BERTimbau** | 0,7919 | 0,787 | 0,7687 | BERT/Transformers, embeddings |
+| **A: Naive Bayes** | 0,613 | 0,562 | 0,542 | BoW/TF-IDF, Naive Bayes |
+| **B: MLP Keras** | **0,670** | **0,705** | **0,615** | Redes densas, ReLU, softmax, Adam, Dropout/L2, overfit |
+| **C: BERTimbau** | 0,627 | 0,650 | 0,566 | BERT/Transformers, embeddings |
 
-O MLP Keras é o **melhor modelo geral**. O BERTimbau empata em F1-macro (0,79 vs 0,80) e supera em classes pequenas (Precatórios: 0,77 vs 0,56). O Naive Bayes é baseline esperado — não consegue classes minoritárias.
+O **MLP Keras é o melhor modelo geral**. O BERTimbau não o supera na régua
+externa (apesar de melhor no interno — generaliza um pouco pior para o gold). O
+Naive Bayes é baseline esperado — confirma que vale um modelo mais expressivo.
 
----
+> **Atenção à interpretação:** fundir classes **sobe a métrica** (menos confusão
+> entre vizinhos + mais suporte por classe), mas **parte do ganho 30→12→10 é
+> mecânica** (remoção de classes minúsculas): o kappa sobe menos que o F1. Não
+> superinterpretar o 0,705.
+
+#### Per-class F1 — MLP, 10 classes (gold)
+
+- **Fortes:** Violência doméstica **0,90**; Questões fundiárias 0,81;
+  Sustentabilidade 0,74; Tecnologia/Justiça 4.0 0,72; Infância+socioeducativo
+  0,70; DH/diversidade 0,67.
+- **Mais fracas (nenhuma < 0,5):** Gestão/governança/corregedoria **0,58** (n=85,
+  catch-all residual); Sistema prisional 0,59; Judicialização 0,64.
+
+#### Análise de Overfit (peça central do Módulo 2 do curso)
+
+A MLP é treinada **com e sem Dropout** pelas mesmas 50 épocas (sem early stopping,
+para tornar as curvas comparáveis — figura `14_overfit_mlp`), e em 4 regimes de
+regularização (figura `14b_regularizacao`). Números (esquema de 10 classes):
+
+| Regime | train_acc final | val_acc melhor | val_loss mín | subida de val_loss |
+|:---|:---:|:---:|:---:|:---:|
+| Sem regularização | 1,00 | 0,839 | 0,507 | +0,142 |
+| Dropout 0,3 | 1,00 | 0,853 | 0,517 | **+0,215** |
+| L2 1e-3 | 1,00 | 0,853 | 0,628 | 0,000 |
+| L2 1e-2 (forte) | 0,995 | 0,832 | 1,070 | 0,000 (underfit) |
+
+> 🧠 **Resultados negativos honestos:**
+> - **Overfit clássico:** treino → 100% de acerto; validação estaciona (~0,84).
+> - **Dropout NÃO ajuda** em TF-IDF esparso com poucos dados — a subida de
+>   val_loss é *maior* com Dropout (+0,215) que sem (+0,142).
+> - **L2 forte leva a underfit** (val_acc cai, val_loss alta e plana).
+> - O modelo final usa Dropout moderado + early stopping (parou em ~11 épocas).
 
 ### FASE 6b — NER (Extração de Entidades) ✅
 
-**Modelo:** `rhaymison/ner-portuguese-br-bert-cased` (mesmo do curso) via `transformers.pipeline("ner", aggregation_strategy="max")`
-
-**Limpeza da saída do NER (funil real, contagem em cada etapa).** A saída crua do modelo é ruidosa (fragmentos de subpalavra, preposições penduradas no span, substantivos comuns tageados como entidade, sem corte de confiança). Aplicado, nesta ordem: corte de score (`--min-score 0.90`) → limpeza de bordas funcionais → filtro de fragmento → filtro de genérico. Listas canônicas em `src/text_utils.py`.
+**Modelo:** NER em português (`transformers.pipeline("ner",
+aggregation_strategy="max")`). A saída crua do modelo é ruidosa; aplicamos um
+funil explícito e auditável (`src/ner.py`, listas canônicas em `text_utils.py`):
 
 | Etapa do funil | Entidades | % do bruto |
 |---|--:|--:|
@@ -224,151 +258,151 @@ O MLP Keras é o **melhor modelo geral**. O BERTimbau empata em F1-macro (0,79 v
 | Após filtro de fragmento | 4.344 | 36,3% |
 | **Após filtro de genérico (final)** | **4.136** | **34,6%** |
 
-O corte de confiança é, de longe, o filtro dominante (descarta 62,5% — entidades de baixa probabilidade). Docs processados: 979. Entidades distintas (chaves): 1.880.
+O corte de confiança é o filtro dominante (descarta 62,5%). **Taxa de fragmento
+residual: 0,77%** (siglas/topônimos curtos legítimos: Acre, Rio, EUA, Haia, USP),
+não lixo de tokenizer — o resíduo de subpalavra "##" foi a zero.
 
-**Taxa de fragmento residual: 0,77%** (32/4.136 chaves ≤4 chars não-sigla). A amostra residual é majoritariamente composta por entidades **legítimas** curtas (Acre, Rio, EUA, Haia, USP, TJRN, TJAP), não por lixo de tokenizer — o resíduo de subpalavra ("##") foi a zero, mas siglas/topônimos curtos sobrevivem por construção e são contados com honestidade.
-
-**Top 10 entidades** (por nº de notícias distintas; `tipo` é informativo, não autoritativo):
+**Top entidades** (por nº de notícias distintas; `tipo` é informativo):
 
 | Entidade | Notícias | Ocorrências |
 |----------|:--------:|:-----------:|
 | Conselho Nacional de Justiça | 409 | 428 |
 | Edson Fachin | 129 | 137 |
 | Brasília | 68 | 71 |
-| Programa das Nações Unidas para o Desenvolvimento | 40 | 42 |
+| Programa das Nações Unidas para o Desenvolvimento (PNUD) | 40 | 42 |
 | Mauro Campbell Marques | 39 | 41 |
-| Maranhão | 27 | 30 |
-| Rio de Janeiro | 27 | 35 |
-| Amazonas | 22 | 27 |
-| Fábio Esteves | 22 | 24 |
-| João Paulo Schoucair | 20 | 20 |
-
-**Entidades por classe temática** (diferenciais; auto-referências do CNJ excluídas):
-- **Direitos humanos:** Edson Fachin (48), Corte Interamericana de Direitos Humanos (15)
-- **IA/Justiça 4.0:** PNUD (17), Rodrigo Badaró (9)
-- **Disciplinares:** Mauro Campbell Marques (16) — única classe com corregedor como top
-- **Sustentabilidade:** Guilherme Feliciano (5) — juiz com pauta ambiental
-- **Saúde:** Fórum Nacional do Judiciário para a Saúde (11)
-- **Sistema prisional:** Pernambuco (8), PNUD (8)
 
 ---
 
-### FASE 7 — Documentação ✅
+## 3. Análises adicionais (qualidade do gold e alavanca dos outliers)
 
-- **`README.md`** — nova narrativa (descoberta → classificação → NER → deriva), métricas honestas, reprodutibilidade
-- **`docs/coleta.md`** — 115 linhas: fonte, endpoint, schema, limitações
-- **`docs/limitacoes.md`** — 123 linhas: auto-auditoria adversarial respondendo 6 perguntas de banca cética
-- **`docs/referencias.md`** — 138 linhas: **19 referências** (17 DOIs verificados + 2 sem DOI citadas pela URL):
-  - **Domínio (6):** Agenda-setting, modelagem de tópicos em mídia, PLN jurídico pt-BR (LeNER-Br, Lage-Freitas), análise quantitativa de texto jornalístico
-  - **Técnica (13):** TF-IDF (Salton & Buckley), BoW/Naive Bayes (Manning IIR), BERTopic, Sentence-BERT, UMAP, HDBSCAN, c_v coherence, Transformer (Vaswani), BERT (Devlin), BERTimbau (Souza), Adam (Kingma & Ba), Dropout (Srivastava/JMLR), Deep Learning (Goodfellow/MIT Press)
-  - ✅ Todos verificados resolvendo `doi.org`
+### Diagnóstico dos outliers
+56% do corpus (e do gold) são outliers do BERTopic, ausentes do pool. O MLP cai
+de **F1 0,70** (clusterizados) para **0,58** (outliers). O rótulo fraco concorda
+com o gold **0,75** (F1, 12 classes) — o **teto do "professor"**.
+
+### Experimento sem vazamento — rotular outliers ajuda? (`exp_outliers.py`)
+Validação cruzada 5-fold sobre os 167 outliers genuínos (eval com rótulo gold;
+treino com rótulo do dono; teste sempre fora do treino):
+
+| Modelo | acc ANTES→DEPOIS | F1 ANTES→DEPOIS | kappa ANTES→DEPOIS |
+|---|:---:|:---:|:---:|
+| NB | 0,551 → 0,557 | 0,515 → 0,517 | 0,479 → 0,483 (~0) |
+| **MLP** | 0,599 → **0,647** | 0,650 → **0,679** | 0,537 → **0,588** (+0,05) |
+| BERTimbau | 0,575 → 0,575 | 0,605 → 0,603 | 0,511 → 0,506 (~0) |
+
+**Conclusão:** rotular outliers dá ganho **modesto e só no MLP** (+0,05). A
+barreira é a ambiguidade da taxonomia/rótulos, não a falta de dados.
+
+### Teto humano e adjudicação (`adjudicate.py`)
+Re-anotação humana dos 300 docs do gold concorda com a anotação original em
+**70,3% (30 classes) / 80,7% (10 classes)**, kappa 0,68 / 0,77. Logo o **teto da
+tarefa é ~0,81**, não 1,0 — e o MLP (0,705) já opera perto dele.
+
+- MLP vs. consenso das 211 concordâncias: **F1 0,808** (vs. 0,705 no gold completo)
+  — o grosso do "erro" do modelo está nos docs que os próprios humanos disputam.
 
 ---
 
-## 3. Cobertura do Curso
+## 4. Cobertura do Curso
 
 | Conceito | Onde | Arquivo |
 |----------|------|---------|
-| **Bag-of-Words / TF-IDF** | Features de todos os modelos (Fase 6) | `src/classify.py::build_vectorizer()` |
+| **Bag-of-Words / TF-IDF** | Features dos Modelos A/B (Fase 6) | `src/classify.py::build_vectorizer()` |
 | **Naive Bayes** | Modelo A — baseline clássico | `src/classify.py::run_naive_bayes()` |
 | **Rede neural densa (Keras)** | `Sequential([Dense,Dense,Dense])` — Modelo B | `src/classify.py::build_mlp()` |
 | **ReLU, softmax** | Ativações das camadas da MLP | `src/classify.py::build_mlp()` |
-| **Adam, gradiente descendente** | `optimizer="adam"` na compilação | `src/classify.py::build_mlp()` |
+| **Adam, gradiente descendente** | `optimizer="adam"` | `src/classify.py::build_mlp()` |
 | **Treino/teste/validação** | Split estratificado 70/15/15 | `src/classify.py::make_splits()` |
 | **Overfit/underfit** | Curvas treino×validação (figs 14, 14b) | `src/classify.py::run_mlp()` |
 | **Regularização (Dropout, L2)** | Estudo controlado: sem reg / Dropout / L2 1e-3 / L2 1e-2 | `src/classify.py::overfit_study()` |
-| **BERTimbau / Transformers** | Modelo C (emb congelado + LogReg) + NER | `src/embed_bertimbau.py`, `src/ner.py` |
+| **BERTimbau / Transformers** | Modelo C + NER | `src/embed_bertimbau.py`, `src/ner.py` |
 | **Embeddings** | sentence-transformers (exploração) + BERTimbau | `src/embed.py`, `src/embed_bertimbau.py` |
 
 ---
 
-## 4. Resultados Negativos Documentados
+## 5. Resultados Negativos Documentados
 
-1. **Colapso inicial em 2 tópicos** (cosseno médio ≈0,69) — corrigido com `n_neighbors=10` + `leaf`
-2. **Bug de acentos** — BERTopic `language="english"` remove não-ASCII
-3. **Dropout piora generalização** em TF-IDF esparso (val_loss +0,057 vs +0,015 sem reg)
-4. **L2 forte (1e-2) causa underfit** — val_loss flat em 1,49
-5. **Segfault TF+torch+numba** — resolvido com `src/tf_guard.py`
-6. **NER com saída ruidosa** (fragmentos "##J"/"##dor", preposição pendurada, genéricos, sem corte de score) — **reduzido**, não eliminado: funil 11.971 brutos → 4.136 finais; fragmento residual 0,77% (siglas/topônimos curtos legítimos), resíduo de subpalavra a zero
-7. **κ real 0,79 vs relato anterior 0,91** — diferença é vazamento corrigido
-8. **Naive Bayes F1=0 em Precatórios** — classe pequena demais para NB
-9. **29% outliers HDBSCAN** — docs ambíguos descartados pelo clustering
+1. **Colapso inicial em 1–2 tópicos** — corrigido com `n_neighbors=10` + `leaf`.
+2. **Bug de acentos** — BERTopic `language="english"` removia não-ASCII.
+3. **Rótulo fraco usava `topic_raw`** (espaço 0–45) em vez de `classe_id` (0–29)
+   — estourava a MLP; corrigido.
+4. **Dropout não ajuda** em TF-IDF esparso (val_loss +0,215 vs +0,142 sem reg).
+5. **L2 forte (1e-2) causa underfit** — val_loss plana em 1,07.
+6. **Segfault TF+torch** — resolvido com `src/tf_guard.py` + BERTimbau em processo
+   separado.
+7. **Kappa real ~0,48–0,62** (conforme granularidade) vs. relato antigo inflado
+   ~0,9 — diferença é vazamento corrigido (gold fora do treino).
+8. **Naive Bayes fica muito atrás** (F1 0,36–0,56) — baseline insuficiente em
+   classes pequenas.
+9. **56% de outliers** do HDBSCAN — pool não os representa; rotulá-los rende pouco
+   (+0,05 só MLP).
+10. **30 classes têm 4 sem nenhum gold** e várias com F1 instável — motivo das
+    fusões 12/10.
+11. **Parte do ganho 30→12→10 é mecânica** — o kappa sobe menos que o F1.
 
 ---
 
-## 5. Figuras Geradas (18 PNGs)
+## 6. Figuras Geradas
 
 | # | Arquivo | Fase | Conteúdo |
 |:-:|---------|:----:|----------|
-| 01 | `01_volume_por_mes.png` | 3 | Série temporal mensal |
-| 02 | `02_volume_por_categoria.png` | 3 | Volume por categoria-fonte |
-| 03 | `03_distribuicao_comprimento.png` | 3 | Distribuição de comprimento |
-| 04 | `04_top_termos.png` | 3 | Top termos frequência |
-| 05 | `05_wordcloud.png` | 3 | Wordcloud (651 KB) |
-| 06 | `06_volume_semanal.png` | 3 | Volume semanal |
-| 07 | `07_topic_eval.png` | 4 | Comparação c_v por min_topic_size |
-| 08 | `08_topic_sizes.png` | 4 | Tamanho de cada tópico |
-| 08b | `08b_classes_tematicas.png` | 4 | Distribuição das classes temáticas |
-| 09 | `09_topic_terms.png` | 4 | Barchart top-termos por tópico |
-| 10 | `10_streamgraph.png` | 5 | Streamgraph com eventos (290 KB) |
-| 11 | `11_topicos_no_tempo.png` | 5 | Linhas temporais por tópico |
-| 12 | `12_drift_h1_h2.png` | 5 | Comparação H1 vs H2 |
-| 13 | `13_confusion_matrix.png` | 6 | Matriz de confusão NB |
-| 14 | `14_overfit_mlp.png` | 6 | Curvas treino×validação MLP |
-| 14b | `14b_regularizacao.png` | 6 | Comparação regularização |
-| 15 | `15_confusion_gold.png` | 6 | Matriz gold MLP |
-| 16 | `16_top_entidades.png` | 6b | Top entidades NER |
+| 01–06 | `01_volume_por_mes` … `06_volume_semanal` | 3 | EDA |
+| 07–09 | `07_topic_eval`, `08_topic_sizes`, `08b_classes_tematicas`, `09_topic_terms` | 4 | BERTopic |
+| 10–12 | `10_streamgraph`, `11_topicos_no_tempo`, `12_drift_h1_h2` | 5 | Deriva |
+| 13 | `13_confusion_matrix` | 6 | Matriz NB |
+| 14 | `14_overfit_mlp*` | 6 | Curvas treino×validação MLP |
+| 14b | `14b_regularizacao*` | 6 | Comparação de regularização |
+| 15 | `15_confusion_gold*` | 6 | Matriz gold MLP |
+| 16 | `16_top_entidades` | 6b | Top entidades NER |
+
+> Sufixo por esquema nas figuras da Fase 6: `''` (30), `_merged` (12),
+> `_merged10` (10).
 
 ---
 
-## 6. Estrutura do Repositório
+## 7. Estrutura do Repositório
 
 ```
 cnj-pauta-pln/
-├── README.md
+├── README.md                                  # guia de execução completo
+├── RELATORIO.md                               # este relatório
 ├── requirements.txt
-├── environment.yml
-├── .gitignore
 ├── data/
-│   ├── raw/noticias.jsonl                    # 983 notícias brutas
-│   ├── interim/noticias_limpo.parquet         # 979 pós-limpeza
-│   └── processed/                             # embeddings, modelo, métricas
+│   ├── raw/noticias.jsonl                      # 4.410 notícias brutas
+│   ├── interim/noticias_limpo.parquet          # 4.394 pós-limpeza
+│   └── processed/                              # embeddings, modelo, métricas
 ├── notebooks/
-│   ├── 01_eda.ipynb
-│   ├── 02_topic_modeling.ipynb
-│   ├── 03_temporal_drift.ipynb
-│   └── 04_supervised_classification.ipynb
+│   ├── 01_eda.ipynb · 02_topic_modeling.ipynb
+│   └── 03_temporal_drift.ipynb · 04_supervised_classification.ipynb
 ├── src/
-│   ├── collect.py                             # Coleta WP REST API
-│   ├── preprocess.py                          # Limpeza/dedup
-│   ├── embed.py                               # Embeddings sentence-transformers
-│   ├── text_utils.py                          # Taxonomia canônica (TF-free)
-│   ├── tf_guard.py                            # Bloqueio TF no BERTopic
-│   ├── topics.py                              # BERTopic (descoberta)
-│   ├── drift.py                               # Deriva temporal
-│   ├── classify.py                            # NB + MLP Keras + BERTimbau (NÚCLEO)
-│   ├── embed_bertimbau.py                     # Embeddings BERTimbau
-│   └── ner.py                                 # NER (modelo do professor)
+│   ├── collect.py · preprocess.py · embed.py
+│   ├── text_utils.py                           # taxonomia 30/12/10, MERGE_MAP(_10)
+│   ├── tf_guard.py · topics.py · drift.py
+│   ├── embed_bertimbau.py · classify.py · ner.py
+│   ├── sample_outliers.py · exp_outliers.py    # alavanca dos outliers
+│   └── adjudicate.py                           # consenso gold × re-anotação
 ├── reports/
-│   ├── eventos_cnj.csv                        # 12 eventos
-│   ├── gold_labels.csv                        # 173 gold humano + 22 indefinido
-│   ├── gold_template.csv                      # ~200 template (classe vazia)
-│   └── figures/                               # 18 PNGs
+│   ├── RESUMO_FINAL.md                         # fonte única dos números
+│   ├── gold_labels.csv                         # 300 gold humano (0 indefinido)
+│   ├── taxonomia_map.csv · eventos_cnj.csv
+│   └── figures/                                # PNGs
 └── docs/
-    ├── coleta.md
-    ├── referencias.md                         # 19 refs (17 DOIs verificados)
-    └── limitacoes.md                          # Auto-auditoria adversarial
+    ├── coleta.md · referencias.md · limitacoes.md
 ```
 
 ---
 
-## 7. Auto-Auditoria Adversarial (resumo)
+## 8. Auto-Auditoria Adversarial (resumo)
 
 | Pergunta da banca | Resposta |
 |-------------------|----------|
-| "Gold é humano e independente?" | ✅ Sim. 173 notícias rotuladas à mão como tópico 0–9. Excluído do treino (sem vazamento). |
-| "Métricas vivem em subconjunto fácil?" | Parcialmente. F1=0,80 é sobre gold (não sobre weak set). 22 "indefinido" excluídos (~11%). |
-| "Overfit foi tratado?" | ✅ Documentado com estudo controlado (figs 14, 14b). Dropout não ajuda; L2 1e-3 sim. |
-| "Por que classificação e não só topic modeling?" | ✅ Classificação cobre o currículo do curso. BERTopic é descoberta exploratória, não avaliação. |
-| "Quais técnicas do curso foram usadas?" | Todas as 10 listadas na seção 3. |
-| "Generaliza para outros órgãos?" | Não. Estudo de caso de 6 meses de UM órgão. Sem validade externa. |
+| "Gold é humano e independente?" | ✅ 300 notícias rotuladas à mão (0–29), **removidas do treino** (sem vazamento). Há agora uma **segunda anotação humana** (teto ~0,81). |
+| "Métricas vivem num subconjunto fácil?" | Não. A régua que vale é o gold de 300 (não o pool). 0 `indefinido` na versão atual. |
+| "Overfit foi tratado?" | ✅ Estudo controlado (figs 14/14b). **Dropout não ajuda** em TF-IDF esparso; final usa Dropout moderado + early stopping. |
+| "Por que classificação e não só topic modeling?" | ✅ A avaliação formal exige supervisão + gold humano. BERTopic é descoberta exploratória que *deriva a taxonomia*. |
+| "O número 0,705 é robusto?" | Parcialmente: parte do ganho 30→12→10 é mecânica (kappa sobe menos). Mas 0,705 já está perto do **teto humano (~0,81)**. |
+| "Generaliza para outros órgãos?" | Não. Estudo de caso de 24 meses de UM órgão. Sem validade externa. |
+
+Auto-auditoria completa e limitações por fase: **`docs/limitacoes.md`**.
+Referências (19, DOIs verificados): **`docs/referencias.md`**.

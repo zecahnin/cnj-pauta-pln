@@ -229,6 +229,24 @@ por classe), mas **parte do ganho é mecânica** (remove classes minúsculas): o
 kappa sobe menos que o F1. O **teto humano** (re-anotação vs. gold) é **~0,81**
 em 10 classes — o MLP (0,705) já opera perto desse limite.
 
+#### Estudo de overfit/underfit (MLP, 10 classes)
+
+A MLP é treinada **com e sem Dropout** pelas mesmas 50 épocas (sem early stopping,
+p/ curvas comparáveis — fig. `14_overfit_mlp`) e em 4 regimes de regularização
+(fig. `14b_regularizacao`):
+
+| Regime | train_acc final | val_acc melhor | val_loss mín | subida de val_loss |
+|---|:---:|:---:|:---:|:---:|
+| Sem regularização | 1,00 | 0,839 | 0,507 | +0,142 |
+| Dropout 0,3 | 1,00 | 0,853 | 0,517 | **+0,215** |
+| L2 1e-3 | 1,00 | 0,853 | 0,628 | 0,000 |
+| L2 1e-2 (forte) | 0,995 | 0,832 | 1,070 | 0,000 (underfit) |
+
+**Resultados negativos honestos:** overfit clássico (treino→100%, validação
+estaciona ~0,84); o **Dropout NÃO ajuda** em TF-IDF esparso (val_loss sobe *mais*
+com Dropout, +0,215, que sem, +0,142); **L2 forte leva a underfit**. O modelo
+final usa Dropout moderado + early stopping (parou em ~11 épocas).
+
 ### Fase 6b — NER (entidades nomeadas)
 - **Comando.** `python src/ner.py --min-score 0.90`
 - **Por baixo.** NER em português + funil de limpeza (confiança → preposições de

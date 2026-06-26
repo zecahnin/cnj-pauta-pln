@@ -232,3 +232,40 @@ teste). Foi recusada e medida de forma válida (CV). Ver `adjudicate.py` /
 - Fontes externas auditáveis de eventos (DOU, atos normativos do CNJ) para
   cruzamento causal mais forte.
 - Análise de subtópicos hierárquica para os tópicos largos (T0, T3, T9).
+
+## 5. Síntese das limitações de fechamento (corpus de 24 meses)
+
+As cinco limitações que melhor caracterizam o teto e o escopo do trabalho final.
+Todos os números vêm de execuções reais (seed=42); detalhes em
+`reports/RESUMO_FINAL.md`.
+
+1. **56% de outliers do BERTopic.** Com `min_topic_size=20` (vencedor por c_v +
+   diversidade), **55,5% do corpus** caem em outlier (topic_raw=-1) e ficam fora
+   do pool de treino. O gold tem a mesma proporção, e o MLP cai de **F1 0,70**
+   (docs clusterizados) para **0,58** (outliers). É o fato central de limitação:
+   o pool não representa mais da metade do acervo.
+
+2. **Teto do rótulo fraco ~0,75.** O rótulo do BERTopic (o "professor") concorda
+   com o gold humano só **0,75** (F1, 12 classes). Nenhum classificador treinado
+   nesse rótulo pode, em média, superar esse teto — o "aluno" não passa do
+   "professor".
+
+3. **Teto humano ~0,81.** Uma re-anotação humana dos 300 docs do gold concorda
+   com a anotação original em apenas **70,3% (30 classes) / 80,7% (10 classes)**
+   (kappa 0,68 / 0,77). Logo o teto real da tarefa **não é 1,0**; o MLP (F1 0,705
+   em 10 classes) já opera **perto desse limite humano** — o grosso do "erro"
+   restante está nos docs que os próprios humanos disputam.
+
+4. **Dropout não ajuda em TF-IDF.** Em features TF-IDF esparsas com poucos dados,
+   o Dropout **piora** a generalização — a subida de `val_loss` é maior **com**
+   Dropout (+0,215) do que **sem** (+0,142). Quem controla o overfit é o
+   EarlyStopping (e L2 moderado); L2 forte (1e-2) leva a underfit. Resultado
+   negativo declarado, não mascarado (figuras 14/14b).
+
+5. **Quatro classes sem nenhum gold no esquema de 30.** A taxonomia consolidada
+   tem 30 classes, mas **4 não têm um único exemplo no gold** e várias têm n<6,
+   o que torna o macro-F1 instável (um erro zera a classe) e infla a confusão
+   entre vizinhos. Esse é o motivo direto das fusões opt-in 30→12→10 — mas
+   **parte do ganho dessas fusões é mecânica** (remover classes minúsculas infla
+   o macro-F1): o kappa sobe menos que o F1, e o 0,705 não deve ser
+   superinterpretado.
