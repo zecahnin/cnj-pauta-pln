@@ -347,6 +347,25 @@ def run_naive_bayes(pool, tr, va, te, gold_df) -> dict:
 # --------------------------------------------------------------------------- #
 # Modelo B — MLP Keras (com análise de overfit/underfit e Dropout)
 # --------------------------------------------------------------------------- #
+def _save_model_10(vec, model, n_features: int) -> None:
+    """Persiste vectorizer + MLP do esquema 10 para inferência no app_demo."""
+    import joblib
+    out = PROJECT_ROOT / "data" / "processed" / "model_10"
+    out.mkdir(parents=True, exist_ok=True)
+    joblib.dump(vec, out / "vectorizer.joblib")
+    model.save(out / "mlp.keras")
+    meta = {
+        "scheme": SCHEME,
+        "class_names": {str(i): TAXONOMY[i] for i in range(N_CLASSES)},
+        "n_features": n_features,
+        "seed": SEED,
+    }
+    (out / "meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"[clf] modelo salvo em {out} "
+          f"(vectorizer.joblib, mlp.keras, meta.json)")
+
+
 def build_mlp(n_features: int, dropout: float, l2: float = 0.0):
     import tensorflow as tf
     from tensorflow.keras import Sequential, regularizers
@@ -379,7 +398,7 @@ def train_mlp(model, Xtr, ytr, Xva, yva, epochs: int, patience: int = 5,
     return hist
 
 
-def run_mlp(pool, tr, va, te, gold_df, epochs: int) -> dict:
+def run_mlp(pool, tr, va, te, gold_df, epochs: int, save_model: bool = False) -> dict:
     print("\n[clf] === Modelo B: MLP Keras (TF-IDF -> Dense/Dropout/softmax) ===")
     vec = build_vectorizer()
     Xtr = vec.fit_transform(pool.iloc[tr]["text_tfidf"]).toarray().astype("float32")
@@ -468,6 +487,8 @@ def run_mlp(pool, tr, va, te, gold_df, epochs: int) -> dict:
     ext = score(gold_df["gold"], gpred, with_kappa=True)
     print(f"[clf]   externo (gold): acc={ext['accuracy']} "
           f"f1_macro={ext['f1_macro']} kappa={ext['kappa']}")
+    if save_model:
+        _save_model_10(vec_g, m_g, int(Xpool_all.shape[1]))
     return {"internal": internal, "external": ext,
             "external_per_class_f1": per_class_f1(gold_df["gold"], gpred),
             "overfit_analysis": overfit_gap, "_gold_pred": gpred.tolist()}
@@ -620,6 +641,9 @@ def main() -> None:
                          "12=fusão (MERGE_MAP), 10=fusão (MERGE_MAP_10).")
     ap.add_argument("--merged", action="store_true",
                     help="(alias retrocompatível de --scheme 12).")
+    ap.add_argument("--save-model", action="store_true",
+                    help="Salva vectorizer e MLP em data/processed/model_10/ "
+                         "para uso no app_demo.py (requer --scheme 10).")
     args = ap.parse_args()
 
     set_seeds()
@@ -642,7 +666,11 @@ def main() -> None:
 
     results = {}
     results["naive_bayes"] = run_naive_bayes(pool, tr, va, te, gold_df)
-    results["mlp_keras"] = run_mlp(pool, tr, va, te, gold_df, epochs=args.epochs)
+    save_model_flag = getattr(args, "save_model", False) and SCHEME == "10"
+    if getattr(args, "save_model", False) and SCHEME != "10":
+        print("[clf] AVISO: --save-model requer --scheme 10; ignorado.")
+    results["mlp_keras"] = run_mlp(pool, tr, va, te, gold_df, epochs=args.epochs,
+                                    save_model=save_model_flag)
     if not args.skip_bert:
         results["bertimbau"] = run_bertimbau(pool, tr, va, te, gold_df)
 
